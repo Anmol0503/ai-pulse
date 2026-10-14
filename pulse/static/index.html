@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Pulse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:ital,wght@0,400;0,600;0,800;1,400&display=swap" rel="stylesheet">
+<!--published-head-->
+<style>
+  /* Colour = meaning, everywhere on the page:
+     highlighter yellow = learn, ink underline = know, grey = skip, red pen = something failed. */
+  :root {
+    --paper: #F3F5F8;
+    --ink: #1E2A44;
+    --ink-soft: #4B566B;
+    --muted: #6B7483;
+    --rule: #D9DEE6;
+    --hl: #FFE14D;
+    --on-hl: #1E2A44;
+    --know: #4A6FA5;
+    --skip: #B8C0CC;
+    --wait: #D5DBE3;
+    --pen: #B3261E;
+    --button: #1E2A44;
+    --on-button: #F3F5F8;
+    --focus: #1E2A44;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #131B2C;
+      --ink: #E6EAF1;
+      --ink-soft: #B4BDCC;
+      --muted: #8C97A8;
+      --rule: #2A3550;
+      --hl: #EBCB45;
+      --on-hl: #131B2C;
+      --know: #8DB0E3;
+      --skip: #4A5670;
+      --wait: #2F3A55;
+      --pen: #FF8A80;
+      --button: #E6EAF1;
+      --on-button: #131B2C;
+      --focus: #EBCB45;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 18px/1.55 "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, sans-serif;
+  }
+  a { color: inherit; text-underline-offset: 3px; }
+  a:hover { text-decoration-thickness: 2px; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+  [hidden] { display: none !important; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  section.bucket:focus { outline: none; }
+  #engine-note { margin: 12px 0 0; font-size: 16px; }
+
+  .page { max-width: 46rem; margin: 0 auto; padding: 20px 16px 96px; overflow-wrap: anywhere; }  /* long model ids wrap */
+
+  /* ---- top bar ---- */
+  .top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+  .brand { font-weight: 800; font-size: 22px; letter-spacing: -0.01em; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  select, button { font: inherit; font-size: 16px; color: inherit; }
+  select {
+    background: transparent; border: 1.5px solid var(--rule); border-radius: 6px;
+    padding: 7px 10px; max-width: 100%;
+  }
+  .pull {
+    background: var(--button); color: var(--on-button); border: 0; border-radius: 6px;
+    padding: 9px 18px; font-weight: 600; cursor: pointer;
+  }
+  .pull:disabled { opacity: .55; cursor: progress; }
+  a.pull { text-decoration: none; display: inline-block; }
+  .sub { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+         margin-top: 10px; color: var(--muted); font-size: 15px; }
+  .sub label { display: flex; align-items: center; gap: 8px; }
+  .sub select { font-size: 15px; padding: 4px 8px; }
+
+  /* ---- hero: the sort ---- */
+  .hero { margin: 56px 0 8px; }
+  .hero h1 { font-size: clamp(34px, 7vw, 54px); line-height: 1.08; font-weight: 800; letter-spacing: -0.02em; margin: 0; text-wrap: balance; }
+  .hero .lede { margin: 12px 0 0; color: var(--ink-soft); font-size: 19px; }
+  .strip { display: flex; align-items: flex-end; gap: 2px; height: 48px; margin: 28px 0 12px; }
+  .tick { flex: 1 1 0; min-width: 0; max-width: 14px; height: 28%; background: var(--wait); border-radius: 1px;
+          transition: height .4s ease, background-color .4s ease; }
+  .tick.learn { height: 100%; background: var(--hl); }
+  .tick.know { height: 60%; background: var(--know); }
+  .tick.skip { height: 24%; background: var(--skip); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; padding: 0; list-style: none; font-size: 16px; color: var(--ink-soft); }
+  .legend li { display: flex; align-items: center; gap: 8px; }
+  .swatch { width: 10px; height: 18px; border-radius: 1px; display: inline-block; }
+  .swatch.learn { background: var(--hl); }
+  .swatch.know { background: var(--know); height: 12px; }
+  .swatch.skip { background: var(--skip); height: 7px; }
+  .linklike { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer;
+              text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: 4px; }
+  .linklike:hover { text-decoration-color: currentColor; }
+
+  /* ---- live progress ---- */
+  .status { font-size: 19px; margin: 18px 0 6px; }
+  .status .clock { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: 8px; }
+  .notice { color: var(--pen); margin: 8px 0; }
+  .notice.local { font-size: 16px; margin: -12px 0 22px; max-width: 62ch; }
+  .live { list-style: none; margin: 18px 0 0; padding: 0; columns: 2 15rem; column-gap: 28px; font-size: 15px; }
+  .live li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; break-inside: avoid; color: var(--muted); }
+  .live li.ok { color: var(--ink); }
+  .live li.failed { color: var(--pen); }
+  .live .n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .live li.failed .n { white-space: normal; overflow-wrap: anywhere; text-align: right; min-width: 0; }
+
+  /* ---- sections ---- */
+  section.bucket { margin-top: 64px; }
+  .bucket > h2 { font-size: 28px; font-weight: 800; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .bucket > .about { margin: 0 0 26px; color: var(--muted); font-size: 16px; }
+  .hl { background-image: linear-gradient(transparent 14%, var(--hl) 14%, var(--hl) 90%, transparent 90%);
+        -webkit-box-decoration-break: clone; box-decoration-break: clone;
+        padding: 0 .18em; margin: 0 -.18em; color: var(--on-hl); }
+  .ul { text-decoration: underline; text-decoration-color: var(--know); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+
+  /* learn: numbered, because the number is your reading order */
+  .learn-item { display: grid; grid-template-columns: 2.2rem minmax(0, 1fr); gap: 0 10px; padding: 26px 0 30px; border-top: 1px solid var(--rule); }
+  .learn-item .num { font-weight: 800; font-size: 22px; color: var(--muted); line-height: 1.35; }
+  .learn-item h3 { font-size: 23px; line-height: 1.32; font-weight: 800; margin: 0; text-wrap: pretty; }
+  .meta { color: var(--muted); font-size: 15px; margin: 8px 0 0; }
+  .meta.also { margin-top: 2px; }
+  .meta a { color: inherit; }
+  .passed { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; padding: 0; list-style: none; }
+  .passed li { font-size: 14px; border: 1.5px solid var(--ink-soft); color: var(--ink-soft); border-radius: 999px; padding: 1px 10px; }
+  dl.card { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 14px 18px; margin: 22px 0 0; }
+  dl.card dt { font-weight: 600; color: var(--ink-soft); font-size: 15px; padding-top: 2px; }
+  dl.card dd { margin: 0; max-width: 62ch; }
+  dl.card .term { font-weight: 800; }
+  dl.card .asked { display: block; margin-top: 8px; color: var(--ink-soft); }
+  .card-error { color: var(--pen); margin: 16px 0 0; }
+  .original { margin: 18px 0 0; font-size: 16px; }
+
+  /* know */
+  .know-list, .skip-list { list-style: none; margin: 0; padding: 0; }
+  .know-list li { padding: 14px 0; border-top: 1px solid var(--rule); }
+  .know-list .head { font-size: 19px; font-weight: 600; }
+  .know-list .reason { margin: 4px 0 0; color: var(--ink-soft); }
+  .budget-note { color: var(--ink-soft); font-style: italic; }
+
+  /* skip: the ignore ledger */
+  details.ledger > summary { cursor: pointer; font-size: 18px; color: var(--ink-soft); }
+  details.ledger[open] > summary { margin-bottom: 14px; }
+  .skip-group h4 { margin: 18px 0 6px; font-size: 15px; font-weight: 600; color: var(--muted); }
+  .skip-list li { padding: 5px 0; color: var(--muted); font-size: 16px; }
+  .skip-list a { color: var(--ink-soft); }
+  .skip-list .why { display: block; font-size: 15px; }
+
+  /* the end */
+  .end { margin-top: 72px; padding-top: 28px; border-top: 2px solid var(--ink); }
+  .end .done { font-size: 26px; font-weight: 800; margin: 0; color: var(--ink); }
+  .end p { margin: 10px 0 0; color: var(--ink-soft); font-size: 16px; max-width: 62ch; }
+  .end .failed { color: var(--pen); }
+  details.sources { margin-top: 28px; color: var(--ink-soft); font-size: 16px; }
+  details.sources > summary { cursor: pointer; }
+  .src-group h4 { margin: 18px 0 4px; font-size: 15px; color: var(--muted); font-weight: 600; }
+  .src-group ul { margin: 0; padding-left: 18px; }
+  .src-group li { margin: 4px 0; }
+  .src-group b { color: var(--ink); font-weight: 600; }
+
+  @media (max-width: 560px) {
+    body { font-size: 17px; }
+    .hero { margin-top: 40px; }
+    dl.card { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    dl.card dd { margin-bottom: 12px; }
+    .learn-item { grid-template-columns: 1.6rem minmax(0, 1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tick { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <div class="brand">AI Pulse</div>
+    <div class="controls">
+      <label for="engine">Explain with</label>
+      <select id="engine"></select>
+      <button id="pull" class="pull" type="button">Pull latest</button>
+      <a id="pull-link" class="pull" hidden>Pull now</a>
+    </div>
+  </header>
+  <div class="sub">
+    <span id="when"></span>
+    <label id="history-wrap" hidden>Earlier pulls <select id="history"></select></label>
+  </div>
+
+  <p class="notice" id="engine-note" hidden></p>
+  <p class="sr-only" id="announce" aria-live="polite"></p>
+
+  <section class="hero" aria-labelledby="headline">
+    <h1 id="headline">AI Pulse</h1>
+    <p class="lede" id="lede"></p>
+    <div class="strip" id="strip" role="img" aria-label=""></div>
+    <ul class="legend" id="legend"></ul>
+  </section>
+
+  <section id="progress" hidden>
+    <p class="status"><span id="status-text" aria-live="polite"></span><span class="clock" id="clock" aria-hidden="true"></span></p>
+    <div id="notices"></div>
+    <ul class="live" id="live"></ul>
+  </section>
+
+  <main id="digest"></main>
+</div>
+
+<script>window.PULSE_STATIC = null;</script>
+<script>
+"use strict";
+
+/* ---------- tiny helpers ---------- */
+
+const $ = (sel) => document.querySelector(sel);
+
+// Build DOM from data. Strings always become text nodes, never HTML,
+// so a scraped title can't inject markup into this page.
+function h(tag, attrs = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k === "href") { if (/^https?:\/\//i.test(v)) { el.href = v; el.target = "_blank"; el.rel = "noopener noreferrer"; } }
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid === null || kid === undefined || kid === false || kid === "") continue;
+    el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+
+const saved = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* private window: fine */ } },
+};
+
+// The published copy (GitHub Pages) has no server: publish.py wrote the same answers as
+// files. Paths stay relative, because the site lives under /<repo>/.
+const STATIC = window.PULSE_STATIC;
+
+function staticFile(path) {
+  if (path === "/api/state") return "state.json";
+  const m = path.match(/^\/api\/pulls\/(\d+)$/);
+  return m ? `pulls/${m[1]}.json` : null;
+}
+
+async function api(path, opts) {
+  if (STATIC) {
+    const file = staticFile(path);
+    if (!file || opts?.method === "POST") throw Object.assign(new Error("This copy is read-only."), { status: 405 });
+    path = `${file}?v=${Date.now()}`;  // GitHub Pages caches for 10 minutes; a fresh pull should show at once
+  }
+  const res = await fetch(path, opts);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) { const err = new Error(body.detail || res.statusText); err.status = res.status; throw err; }
+  return body;
+}
+
+const plural = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
+const DAY = 86400000;
+
+function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+
+function dayPhrase(iso) {          // "earlier today", "yesterday", "Sunday", "12 Sep"
+  const d = new Date(iso);
+  const days = Math.round((startOfDay(new Date()) - startOfDay(d)) / DAY);
+  if (days <= 0) return "earlier today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+function ago(iso) {                // "3 hours ago", "2 days ago", "12 Sep"
+  if (!iso) return null;
+  const mins = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (mins < 2) return "just now";
+  if (mins < 60) return `${mins} minutes ago`;
+  if (mins < 24 * 60) return plural(Math.round(mins / 60), "hour") + " ago";
+  const days = Math.round(mins / 1440);
+  if (days < 8) return days === 1 ? "yesterday" : `${days} days ago`;
+  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+function stamp(iso) {
+  return new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+}
+
+const HIT_WORDS = { code: "Changes your code", mac: "Free or local", interview: "Interview concept" };
+const BUCKET_ORDER = { learn: 0, know: 1, skip: 2 };
+
+/* ---------- app state ---------- */
+
+let STATE = null;        // /api/state
+let stream = null;       // EventSource while a pull runs
+let clockTimer = null;
+
+async function boot() {
+  STATE = await api("/api/state");
+  renderEngines();
+  renderHistory();
+  if (STATE.running) return follow();
+  const latest = STATE.pulls.find((p) => p.status === "done");
+  if (latest) await showPull(latest.id);
+  else showEmpty();
+}
+
+async function refreshState() {
+  STATE = await api("/api/state");
+  renderHistory();
+}
+
+/* ---------- top bar ---------- */
+
+function renderEngines() {
+  if (STATIC) {
+    $("#engine").hidden = $('label[for="engine"]').hidden = $("#pull").hidden = true;
+    const link = $("#pull-link");
+    link.hidden = !STATIC.run_url;
+    link.href = STATIC.run_url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    return;
+  }
+  const sel = $("#engine");
+  sel.replaceChildren();
+  const want = saved.get("engine");
+  let chosen = null;
+  for (const [name, e] of Object.entries(STATE.engines)) {
+    const opt = h("option", { value: name, disabled: !e.ok, title: e.detail }, e.ok ? e.label : `${e.label} (unavailable)`);
+    sel.append(opt);
+    if (e.ok && (chosen === null || name === want)) chosen = name;
+  }
+  if (chosen) sel.value = chosen;
+  $("#pull").disabled = !chosen;
+  const note = $("#engine-note");
+  note.hidden = !!chosen;
+  note.textContent = chosen ? "" : "No model is available, so Pull is off. " + Object.values(STATE.engines).map((e) => e.detail).join(" ");
+}
+
+function renderHistory() {
+  const sel = $("#history");
+  const current = sel.value;
+  sel.replaceChildren();
+  for (const p of STATE.pulls) {
+    const label = p.status === "done"
+      ? `${stamp(p.started_at)}, ${p.learn} to learn`
+      : `${stamp(p.started_at)}, ${p.status === "running" ? "running" : "failed"}`;
+    sel.append(h("option", { value: p.id }, label));
+  }
+  $("#history-wrap").hidden = STATE.pulls.length < 2;
+  if (current) sel.value = current;
+}
+
+/* ---------- the strip ---------- */
+
+function setStrip(entries, label) {        // entries: [{id, bucket|null, title}]
+  const strip = $("#strip");
+  strip.style.gap = entries.length > 160 ? "0px" : entries.length > 70 ? "1px" : "2px";  // 300 items still fit a phone
+  strip.replaceChildren(...entries.map((e) =>
+    h("span", { class: "tick" + (e.bucket ? " " + e.bucket : ""), "data-id": e.id, title: e.title || null })));
+  strip.setAttribute("aria-label", label);
+}
+
+// FLIP: remember where each tick is, re-order them into learn / know / skip,
+// then slide each one from its old spot to its new one. The page's one animation.
+function sortStrip(final) {
+  const strip = $("#strip");
+  const ticks = new Map([...strip.children].map((t) => [t.dataset.id, t]));
+  const first = new Map([...ticks].map(([id, t]) => [id, t.getBoundingClientRect().left]));
+  const ordered = final.map((e) => {
+    const t = ticks.get(e.id) || h("span", { class: "tick", "data-id": e.id });
+    t.className = "tick " + e.bucket;
+    if (e.title) t.title = e.title;
+    return t;
+  });
+  strip.replaceChildren(...ordered);
+  strip.style.gap = ordered.length > 160 ? "0px" : ordered.length > 70 ? "1px" : "2px";
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  for (const t of ordered) {
+    const was = first.get(t.dataset.id);
+    if (was === undefined) continue;
+    const dx = was - t.getBoundingClientRect().left;
+    if (!dx) continue;
+    t.animate([{ transform: `translateX(${dx}px)` }, { transform: "none" }],
+              { duration: 700, easing: "cubic-bezier(.2,.7,.2,1)", delay: Math.min(400, Math.abs(dx) / 3), fill: "backwards" });
+  }
+}
+
+function legend(counts) {
+  const jump = (id) => () => {
+    const sec = document.getElementById(id);
+    if (!sec) return;
+    sec.querySelector("details")?.setAttribute("open", "");
+    sec.setAttribute("tabindex", "-1");
+    sec.focus({ preventScroll: true });  // keyboard and screen-reader users land in the section too
+    sec.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  };
+  const item = (bucket, text) => h("li", {}, h("span", { class: "swatch " + bucket, "aria-hidden": "true" }),
+    counts[bucket] ? h("button", { class: "linklike", type: "button", onclick: jump("sec-" + bucket) }, text) : text);
+  $("#legend").replaceChildren(
+    item("learn", `${counts.learn} to learn`),
+    item("know", `${counts.know} to know`),
+    item("skip", `${counts.skip} skipped`));
+}
+
+/* ---------- empty state ---------- */
+
+function showEmpty() {
+  $("#when").textContent = "";
+  $("#headline").textContent = "Nothing pulled yet.";
+  $("#lede").textContent = STATIC
+    ? `The first pull runs ${STATIC.schedule}. To pull now, tap Pull now, then Run workflow on GitHub.`
+    : `Press Pull latest to fetch the last 7 days from ${plural(STATE.sources.length, "source")}. ` +
+      "Every item gets sorted against the three questions in your profile.md, and only the ones that pass get explained.";
+  setStrip([], "No items yet");
+  $("#legend").replaceChildren();
+  $("#digest").replaceChildren(sourcesPanel(true));
+}
+
+/* ---------- a finished pull ---------- */
+
+async function showPull(id, { animate = false } = {}) {
+  const d = await api(`/api/pulls/${id}`);
+  const p = d.pull;
+  $("#history").value = String(p.id);
+  saved.set("lastViewed", String(p.id));
+  const engineLabel = STATE.engines[p.engine]?.label || p.engine;
+  $("#when").textContent = `Pulled ${ago(p.started_at)} with ${engineLabel}`;
+
+  if (p.status !== "done") {
+    $("#headline").textContent = p.status === "running" ? "This pull is still running." : "This pull didn't finish.";
+    $("#lede").textContent = p.error ? `${p.error} Nothing from it was marked as read.` : "";
+    setStrip([], "");
+    $("#legend").replaceChildren();
+    $("#digest").replaceChildren();
+    return;
+  }
+
+  const counts = { learn: d.learn.length, know: d.know.length, skip: d.skip.length };
+  const total = counts.learn + counts.know + counts.skip;
+  const since = p.stats.previous ? `since ${dayPhrase(p.stats.previous)}` : "in the last 7 days";
+  $("#headline").textContent = total ? `${plural(total, "new thing")} ${since}.` : `Nothing new ${since}.`;
+  $("#lede").textContent = !total ? "You're caught up."
+    : counts.learn ? `${plural(counts.learn, "is", "are")} worth learning. The rest is sorted below, with reasons.`
+    : "None of it passed your three questions. Here's what happened anyway, and why the rest was skipped.";
+
+  const final = [...d.learn, ...d.know, ...d.skip].map((r) => ({ id: r.id, bucket: r.bucket, title: r.headline || r.title }));
+  const label = `${plural(total, "item")}: ${counts.learn} to learn, ${counts.know} to know, ${counts.skip} skipped`;
+  if (animate && $("#strip").children.length) { sortStrip(final); $("#strip").setAttribute("aria-label", label); }
+  else setStrip(final, label);
+  legend(counts);
+
+  $("#digest").replaceChildren(
+    counts.learn ? learnSection(d.learn, p.engine) : "",
+    counts.know ? knowSection(d.know) : "",
+    counts.skip ? skipSection(d.skip) : "",
+    endSection(p, total, since));
+}
+
+// "a, b, c" with the commas as plain text, so a link's underline never swallows them
+const listed = (parts) => parts.filter(Boolean).flatMap((p, i) => (i ? [", ", p] : [p]));
+
+function alsoLine(r) {
+  if (!r.also || !r.also.length) return null;
+  return h("p", { class: "meta also" }, "Also covered by: ",
+    listed(r.also.map((a) => h("a", { href: a.url, title: a.title }, a.source))));
+}
+
+function meta(r, extra = null) {
+  const signal = r.signal != null && r.signal_label ? `${r.signal} ${r.signal_label}` : null;
+  return h("p", { class: "meta" }, listed([
+    r.source, r.published_at ? ago(r.published_at) : null, signal, extra,
+    r.discussion_url ? h("a", { href: r.discussion_url }, "comments") : null]));
+}
+
+function learnSection(rows, engine) {
+  return h("section", { class: "bucket", id: "sec-learn" },
+    h("h2", {}, h("span", { class: "hl" }, "Learn")),
+    h("p", { class: "about" }, "Passed at least one of your three questions. Numbered in the order your budget.py ranks them."),
+    engine === "ollama" ? h("p", { class: "notice local" },
+      "Written by a 7B model on your Mac. It gets the gist and invents details, so check any fact against the original before you repeat it.") : null,
+    rows.map((r, i) => learnItem(r, i + 1)));
+}
+
+function learnItem(r, n) {
+  const c = r.card || {};
+  const row = (label, ...content) => content.some(Boolean) ? [h("dt", {}, label), h("dd", {}, ...content)] : [];
+  return h("article", { class: "learn-item", id: "item-" + r.id },
+    h("div", { class: "num", "aria-hidden": "true" }, n),
+    h("div", {},
+      h("h3", {}, h("span", { class: "hl" }, c.headline || r.headline || r.title)),
+      meta(r),
+      alsoLine(r),
+      r.hits.length ? h("ul", { class: "passed", "aria-label": "Why this made the cut" }, r.hits.map((x) => h("li", {}, HIT_WORDS[x] || x))) : null,
+      c.error
+        ? h("p", { class: "card-error" }, `Couldn't explain this one (${c.error}). Triage said: ${r.reason}`)
+        : h("dl", { class: "card" },
+            row("The word", c.term ? h("span", { class: "term" }, c.term + ". ") : null, c.term_meaning),
+            row("Why it matters", c.why_it_matters),
+            row("Example", c.example),
+            row("Say it", c.say_it ? `“${c.say_it}”` : null,
+                c.follow_up_why ? h("span", { class: "asked" }, "They ask “why?” ", c.follow_up_why) : null),
+            row("Reality check", c.reality_check),
+            row("Try it", c.try_it)),
+      h("p", { class: "original" }, h("a", { href: r.url }, "Read the original"))));
+}
+
+function knowSection(rows) {
+  return h("section", { class: "bucket", id: "sec-know" },
+    h("h2", {}, h("span", { class: "ul" }, "Know")),
+    h("p", { class: "about" }, "Big enough that you should have heard of it. Nothing to do."),
+    h("ul", { class: "know-list" }, rows.map((r) => h("li", { id: "item-" + r.id },
+      h("div", { class: "head" }, h("a", { href: r.url, class: "ul" }, r.headline || r.title)),
+      r.reason ? h("p", { class: "reason" }, r.reason) : null,
+      meta(r, r.demoted ? h("span", { class: "budget-note" }, "worth learning, but didn't fit your budget") : null),
+      alsoLine(r)))));
+}
+
+function skipSection(rows) {
+  const groups = new Map();
+  for (const r of rows) (groups.get(r.source) || groups.set(r.source, []).get(r.source)).push(r);
+  return h("section", { class: "bucket", id: "sec-skip" },
+    h("details", { class: "ledger" },
+      h("summary", {}, `${plural(rows.length, "thing")} skipped, and why`),
+      [...groups].map(([source, items]) => h("div", { class: "skip-group" },
+        h("h4", {}, `${source} (${items.length})`),
+        h("ul", { class: "skip-list" }, items.map((r) => h("li", {},
+          h("a", { href: r.url }, r.headline || r.title), r.reason ? h("span", { class: "why" }, r.reason) : null)))))));
+}
+
+function endSection(p, total, since) {
+  const s = p.stats || {};
+  const u = s.usage || {};
+  const failed = Object.entries(s.errors || {});
+  const tokens = (n) => n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
+  let usage = "";
+  if (u.calls) {
+    usage = `It made ${plural(u.calls, "model call")} (${tokens(u.input_tokens)} tokens in, ${tokens(u.output_tokens)} out)`;
+    usage += p.engine === "ollama" ? ", all on your Mac." :
+      !u.cost_usd ? "." : u.cost_usd < 0.005 ? ". At API prices that's under a cent; here it came out of your Claude plan's usage."
+        : `. At API prices that's about $${u.cost_usd.toFixed(2)}; here it came out of your Claude plan's usage.`;
+  }
+  const nSources = Object.keys(s.sources || {}).length;
+  return h("footer", { class: "end" },
+    h("p", { class: "done" }, total ? `That's everything ${since}. You're caught up.` : "You're caught up."),
+    h("p", {}, `This pull checked ${plural(nSources, "source")} in ${plural(Math.round(s.seconds || 0), "second")}. `, usage),
+    failed.length ? h("p", { class: "failed" }, `${plural(failed.length, "source")} didn't answer: ` +
+      failed.map(([n, e]) => `${n} (${e})`).join(", ") + ". Their items will come through on a later pull.") : null,
+    s.budget_error ? h("p", { class: "failed" }, `budget.py raised ${s.budget_error}, so the first few were kept instead.`) : null,
+    overCap(s.over_cap),
+    STATIC ? h("p", {}, `A new pull runs ${STATIC.schedule}. For one now, tap Pull now, then Run workflow; ` +
+      "reload this page in about three minutes.") : null,
+    sourcesPanel(false));
+}
+
+function overCap(counts) {          // no silent caps: say what each source's limit left out
+  const entries = Object.entries(counts || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return null;
+  const total = entries.reduce((sum, [, n]) => sum + n, 0);
+  return h("p", {}, `Each source has a limit per pull, so ${plural(total, "lower-ranked item")} ${total === 1 ? "wasn't" : "weren't"} shown: ` +
+    entries.map(([name, n]) => `${name} ${n}`).join(", ") + ". The limits live in pulse/sources.py.");
+}
+
+function sourcesPanel(open) {
+  const groups = new Map();
+  for (const s of STATE.sources) (groups.get(s.group) || groups.set(s.group, []).get(s.group)).push(s);
+  return h("details", { class: "sources", open: open || null },
+    h("summary", {}, `Where this comes from (${plural(STATE.sources.length, "source")})`),
+    [...groups].map(([g, list]) => h("div", { class: "src-group" }, h("h4", {}, g),
+      h("ul", {}, list.map((s) => h("li", {}, h("b", {}, s.name), ": ", s.why))))));
+}
+
+/* ---------- a pull in progress ---------- */
+
+const STAGE_TEXT = {
+  merge: (n) => `Folding together items that report the same story`,
+  skim: (n) => `Reading the first lines of ${plural(n, "new item")}`,
+  triage: (n) => `Sorting ${plural(n, "item")} against your three questions`,
+  read: (n) => `Reading ${plural(n, "full article")}`,
+  explain: (n) => `Explaining ${n} in plain English`,
+};
+
+function setBusy(busy) {
+  $("#pull").disabled = busy || !$("#engine").value;
+  $("#pull").textContent = busy ? "Pulling…" : "Pull latest";
+  $("#engine").disabled = busy;
+  clearInterval(clockTimer);
+  $("#clock").textContent = "";
+  if (busy) {
+    const t0 = Date.now();
+    clockTimer = setInterval(() => {
+      const s = Math.round((Date.now() - t0) / 1000);
+      $("#clock").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    }, 1000);
+  }
+}
+
+function status(text) { $("#status-text").textContent = text; }
+
+function follow() {
+  setBusy(true);
+  $("#progress").hidden = false;
+  $("#digest").replaceChildren();
+  $("#legend").replaceChildren();
+  $("#notices").replaceChildren();
+  $("#headline").textContent = "Pulling the latest…";
+  $("#lede").textContent = "";
+  setStrip([], "Waiting for items");
+  status("Connecting");
+
+  let finished = false;
+  let pullId = null;
+  stream?.close();
+  stream = new EventSource("/api/pull/events");
+
+  stream.onmessage = async (msg) => {
+    const ev = JSON.parse(msg.data);
+    switch (ev.type) {
+      case "start":
+        pullId = ev.pull_id;
+        $("#live").replaceChildren(...ev.sources.map((name) =>
+          h("li", { "data-name": name }, h("span", {}, name), h("span", { class: "n" }, "…"))));
+        status(`Checking ${plural(ev.sources.length, "source")}`);
+        break;
+      case "source": {
+        const li = [...$("#live").children].find((x) => x.dataset.name === ev.name);
+        if (li) {
+          li.className = ev.error ? "failed" : "ok";
+          li.lastChild.textContent = ev.error ? `failed: ${ev.error}` : `${ev.count} recent`;
+        }
+        break;
+      }
+      case "new":
+        $("#headline").textContent = ev.count ? `${plural(ev.count, "new thing")} found.` : "Nothing new.";
+        setStrip((ev.ids || []).map((id) => ({ id, bucket: null })), `${plural(ev.count, "new item")}, not sorted yet`);
+        status(ev.count ? `Found ${ev.count} new out of ${ev.fetched} fetched` : "Nothing you haven't seen");
+        break;
+      case "stage":
+        status(STAGE_TEXT[ev.stage] ? STAGE_TEXT[ev.stage](ev.total) : ev.stage);
+        break;
+      case "progress":
+        if (ev.sorted) for (const [id, bucket] of Object.entries(ev.sorted)) {
+          const t = $("#strip").querySelector(`[data-id="${CSS.escape(id)}"]`);
+          if (t) t.className = "tick " + bucket;
+        }
+        if (STAGE_TEXT[ev.stage]) status(`${STAGE_TEXT[ev.stage](ev.total)}: ${ev.done} of ${ev.total}`);
+        break;
+      case "warning":
+        $("#notices").append(h("p", { class: "notice" }, ev.message));
+        break;
+      case "done":
+        finished = true;
+        stream.close();
+        setBusy(false);
+        $("#progress").hidden = true;
+        await refreshState();
+        await showPull(ev.pull_id, { animate: true });
+        $("#announce").textContent = `Pull finished: ${ev.learn} to learn, ${ev.know} to know, ${ev.skip} skipped.`;
+        break;
+      case "error":
+        finished = true;
+        stream.close();
+        setBusy(false);
+        $("#headline").textContent = "The pull didn't finish.";
+        $("#lede").textContent = `${ev.message} Nothing was marked as read, so the next pull picks the same items up again.`;
+        status("Stopped");
+        $("#announce").textContent = "The pull didn't finish.";
+        await refreshState();
+        if (ev.pull_id != null) {
+          $("#history").value = String(ev.pull_id);
+          $("#when").textContent = "";
+        }
+        break;
+    }
+  };
+  stream.addEventListener("end", async () => {
+    stream.close();
+    if (finished) return;
+    // The stream ended without "done" or "error": the server restarted mid-pull. Show THAT pull
+    // (stored as interrupted), not whichever pull happened to finish last.
+    setBusy(false);
+    $("#progress").hidden = true;
+    await refreshState();
+    if (pullId != null) await showPull(pullId); else await boot();
+  });
+  stream.onerror = () => {
+    if (finished) return;
+    // The browser keeps retrying on its own; say so instead of ticking "Pulling…" forever.
+    clearInterval(clockTimer);
+    status("Lost contact with the AI Pulse server. Is it still running in the terminal? Reconnecting…");
+    if (stream.readyState === EventSource.CLOSED) setBusy(false);
+  };
+}
+
+/* ---------- wiring ---------- */
+
+$("#engine").addEventListener("change", (e) => saved.set("engine", e.target.value));
+
+$("#pull").addEventListener("click", async () => {
+  const engine = $("#engine").value;
+  $("#pull").disabled = true;
+  try {
+    await api("/api/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ engine }) });
+  } catch (err) {
+    if (err.status !== 409) {           // 409 = already running: just watch it
+      $("#pull").disabled = false;
+      $("#lede").textContent = err.message;
+      return;
+    }
+  }
+  follow();
+});
+
+$("#history").addEventListener("change", (e) => {
+  if (!stream || stream.readyState === EventSource.CLOSED) $("#progress").hidden = true;  // no stale "Stopped" panel
+  showPull(Number(e.target.value));
+});
+
+boot().catch((err) => {
+  $("#headline").textContent = "Couldn't reach the AI Pulse server.";
+  $("#lede").textContent = `${err.message}. Start it with: uv run pulse`;
+});
+</script>
+</body>
+</html>

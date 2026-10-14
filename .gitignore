@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+data/*.db
+data/*.db-*
+
+# Built and stored by the cloud run, never committed to main
+site/
+data/
+.state/
+
+# Yours: the cloud reads it from the PULSE_PROFILE secret instead (see profile.example.md)
+profile.md
