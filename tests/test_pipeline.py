@@ -74,7 +74,7 @@ def test_a_pull_sorts_explains_saves_and_never_repeats(store, fake_source):
     assert digest["learn"][0]["card"]["term"] == "term of learn about caching"
     assert [r["title"] for r in digest["know"]] == ["know about a launch"]
     assert [r["title"] for r in digest["skip"]] == ["funding round"]
-    assert digest["pull"]["stats"]["usage"]["calls"] == engine.calls.count("triage") + engine.calls.count("explain")
+    assert digest["pull"]["stats"]["usage"]["calls"] == len(engine.calls)  # every model call is counted
 
     _, events = pull(store, FakeEngine(), fake_source.source)  # same items again
     assert next(e for e in events if e["type"] == "new")["count"] == 0
@@ -201,3 +201,31 @@ def test_one_failed_triage_batch_cancels_the_others(store, fake_source):
     pull_id, events = pull(store, engine, fake_source.source)
     assert pull_id is None and events[-1]["type"] == "error"
     assert engine.finished == 0 and engine.cancelled == 3  # nobody kept spending after the failure
+
+
+def test_an_item_with_too_little_text_is_not_explained_and_the_next_one_steps_in(store, fake_source, monkeypatch):
+    thin = make_item("learn talk with only a title", signal=900)
+    thin.content = ""
+    fake_source.items = [thin, make_item("learn a real post", signal=10), make_item("learn another post", signal=5)]
+    monkeypatch.setattr(pipeline.budget, "pick_learn", lambda cands: (cands[:2], cands[2:]))
+
+    async def text_of(client, item, limit=9_000):
+        return item.content or item.title
+
+    monkeypatch.setattr(pipeline, "full_text", text_of)
+    pull_id, _ = pull(store, FakeEngine(), fake_source.source)
+    digest = store.digest(pull_id)
+    assert {r["title"] for r in digest["learn"]} == {"learn a real post", "learn another post"}  # the next one stepped in
+    know = {r["title"]: r for r in digest["know"]}
+    assert "Too little detail" in know["learn talk with only a title"]["reason"]
+    assert digest["pull"]["stats"]["too_thin"] == 1
+
+
+def test_cards_the_checker_flags_are_written_again_with_its_notes(store, fake_source):
+    fake_source.items = [make_item("learn a wrong picture"), make_item("learn a fine card")]
+    engine = FakeEngine()
+    pull_id, events = pull(store, engine, fake_source.source)
+    stats = store.digest(pull_id)["pull"]["stats"]
+    assert stats["fixed"] == 1  # only the flagged card is rewritten
+    assert engine.calls.count("check") == 1 and engine.calls.count("explain") == 2
+    assert any(e.get("stage") == "check" for e in events)

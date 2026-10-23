@@ -296,7 +296,7 @@ def test_hf_models_keeps_original_recent_releases_with_sizes():
 
     items = run(go())
     assert [i.url for i in items] == ["https://huggingface.co/Qwen/Qwen9-8B"]
-    assert "8.2B parameters, about 5 GB of memory at 4-bit" in items[0].title
+    assert "8.2B parameters, about 4.9 GB of memory at 4-bit" in items[0].title
     assert "apache-2.0" in items[0].summary
 
 
@@ -477,3 +477,18 @@ def test_gh_trending_says_so_when_the_page_layout_changes():
 
     items, errors = run(go())
     assert items == [] and "layout" in errors[src.name]
+
+
+def test_the_post_wins_over_a_sidebar_of_article_cards():
+    post = "<p>" + "The model runs on your own laptop and answers fast. " * 20 + "</p>"
+    widgets = "".join(f"<article><div>Text Generation • 24B • Updated Aug {n}</div></article>" for n in range(30))
+    page = f"<html><body><div class='blog-content'><h1>Run agents on-device</h1>{post}</div>{widgets}</body></html>"
+    text = html_to_text(page)
+    assert text.startswith("Run agents on-device") and "Text Generation" not in text
+
+
+def test_small_models_get_a_real_memory_estimate():
+    from pulse.fetch import _model_size
+
+    assert _model_size({"safetensors": {"total": 7.4e8}}) == "0.7B parameters, about 0.4 GB of memory at 4-bit"
+    assert _model_size({"safetensors": {"total": 2.7e10}}) == "27.0B parameters, about 16 GB of memory at 4-bit"

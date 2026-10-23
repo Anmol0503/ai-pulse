@@ -1,32 +1,46 @@
-"""Your rule: how much you'll actually read per pull, and what wins when there's too much.
+"""How the 5 cards are chosen: most important first, and not all from one place.
 
-Triage (the fast first pass) can mark any number of items "learn". Each one you keep
-costs a full-article fetch, a slower explanation call, and about five minutes of your
-attention. This function decides which ones you get, and in what order.
+Triage (the fast first pass) can mark a dozen items "learn". You get MAX_LEARN of them.
+Each costs a full-article read, an explanation and about five minutes of you, so:
 
-Nothing you drop is thrown away: it moves to "Know" as a one-liner, labelled
-"didn't fit your budget", so you can still see that it exists.
+  1. Rank by triage's score (1-10), then by how many of your three questions the item
+     passed, then by how new it is.
+  2. First pass: at most MAX_PER_SOURCE from any one source, so five lines from one
+     changelog can't crowd out the week's big story. If slots are still empty, fill
+     them from what's left, still in rank order.
+
+Nothing you drop is thrown away: it moves to "Know" as a one-liner. This file is yours:
+change the rule, save, and the next pull uses it (no restart). Check it with
+    uv run pytest tests/test_budget.py -v
 """
 
 from __future__ import annotations
 
+from collections import Counter
+from datetime import datetime, timezone
+
 from .models import Verdict
 
-MAX_LEARN = 5  # full explanations per pull: the size of one sitting
+MAX_LEARN = 5  # cards per pull: the size of one sitting
+MAX_PER_SOURCE = 2  # on the first pass
+_OLDEST = datetime.min.replace(tzinfo=timezone.utc)
 
 
 def pick_learn(candidates: list[Verdict], max_learn: int = MAX_LEARN) -> tuple[list[Verdict], list[Verdict]]:
-    """Split triage's "learn" items into (keep, demote). `keep` is in reading order.
-
-    What you can rank on, for each candidate v:
-      v.score      1-10: how much triage thinks it matters to you this week
-      v.hits       which of your questions it passed: a list drawn from ["code", "mac", "interview"]
-      v.signal     crowd score (Hacker News points, Hugging Face upvotes...), or None for blogs.
-                   Careful: 300 HN points and 300 HF upvotes are not the same amount of excitement.
-      v.published  when it came out (a UTC datetime), or None
-      v.source     "Simon Willison", "Hacker News", ...
-    """
-    # TODO(you): decide the order you want to read these in (5-10 lines), then cut at max_learn.
-    # Placeholder: the first max_learn in the order the sources happen to be listed. It cuts,
-    # so the page stays finishable, but it doesn't rank: a 9/10 item can lose to a 4/10 one.
-    return candidates[:max_learn], candidates[max_learn:]
+    """Split triage's "learn" items into (keep, demote). `keep` is in reading order."""
+    ranked = sorted(candidates, key=lambda v: (v.score, len(v.hits), v.published or _OLDEST), reverse=True)
+    keep: list[Verdict] = []
+    kept: set[str] = set()
+    per_source: Counter[str] = Counter()
+    for v in ranked:  # pass 1: spread across sources
+        if len(keep) < max_learn and per_source[v.source] < MAX_PER_SOURCE:
+            keep.append(v)
+            kept.add(v.item.id)
+            per_source[v.source] += 1
+    for v in ranked:  # pass 2: fill any empty slots, best first
+        if len(keep) < max_learn and v.item.id not in kept:
+            keep.append(v)
+            kept.add(v.item.id)
+    order = {v.item.id: n for n, v in enumerate(ranked)}
+    keep.sort(key=lambda v: order[v.item.id])  # read the most important first
+    return keep, [v for v in ranked if v.item.id not in kept]

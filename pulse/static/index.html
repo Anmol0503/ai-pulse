@@ -140,6 +140,14 @@
   dl.card .term { font-weight: 800; }
   dl.card .asked { display: block; margin-top: 8px; color: var(--ink-soft); }
   .card-error { color: var(--pen); margin: 16px 0 0; }
+  .part { margin: 20px 0 0; max-width: 60ch; }
+  .part h4 { margin: 0 0 4px; font-size: 15px; font-weight: 600; color: var(--ink-soft); }
+  .part p { margin: 0; font-size: 19px; line-height: 1.6; }
+  .remember { margin: 24px 0 0; padding: 4px 0 4px 14px; border-left: 5px solid var(--hl);
+              font-size: 21px; line-height: 1.4; font-weight: 800; max-width: 52ch; }
+  details.deeper { margin: 22px 0 0; }
+  details.deeper > summary { cursor: pointer; color: var(--ink-soft); font-size: 16px; }
+  details.deeper dl.card { margin-top: 12px; }
   .original { margin: 18px 0 0; font-size: 16px; }
 
   /* know */
@@ -454,7 +462,8 @@ async function showPull(id, { animate = false } = {}) {
   const since = p.stats.previous ? `since ${dayPhrase(p.stats.previous)}` : "in the last 7 days";
   $("#headline").textContent = total ? `${plural(total, "new thing")} ${since}.` : `Nothing new ${since}.`;
   $("#lede").textContent = !total ? "You're caught up."
-    : counts.learn ? `${plural(counts.learn, "is", "are")} worth learning. The rest is sorted below, with reasons.`
+    : counts.learn === 1 ? "Here is the one thing that matters most for you, in plain words."
+    : counts.learn ? `Here are the ${counts.learn} that matter most for you, in plain words.`
     : "None of it passed your three questions. Here's what happened anyway, and why the rest was skipped.";
 
   const final = [...d.learn, ...d.know, ...d.skip].map((r) => ({ id: r.id, bucket: r.bucket, title: r.headline || r.title }));
@@ -489,7 +498,7 @@ function meta(r, extra = null) {
 function learnSection(rows, engine) {
   return h("section", { class: "bucket", id: "sec-learn" },
     h("h2", {}, h("span", { class: "hl" }, "Learn")),
-    h("p", { class: "about" }, "Passed at least one of your three questions. Numbered in the order your budget.py ranks them."),
+    h("p", { class: "about" }, "The ones that matter most for you this week, most important first."),
     engine === "ollama" ? h("p", { class: "notice local" },
       "Written by a 7B model on your Mac. It gets the gist and invents details, so check any fact against the original before you repeat it.") : null,
     rows.map((r, i) => learnItem(r, i + 1)));
@@ -498,35 +507,57 @@ function learnSection(rows, engine) {
 function learnItem(r, n) {
   const c = r.card || {};
   const row = (label, ...content) => content.some(Boolean) ? [h("dt", {}, label), h("dd", {}, ...content)] : [];
+  const part = (label, text) => text ? h("div", { class: "part" }, h("h4", {}, label), h("p", {}, text)) : null;
+  const deeper = (...rows) => rows.flat().length
+    ? h("details", { class: "deeper" }, h("summary", {}, "Go deeper: the term, an interview line, how sure this is"),
+        h("dl", { class: "card" }, ...rows))
+    : null;
+  let body;
+  if (c.error) {
+    body = h("p", { class: "card-error" }, `Couldn't explain this one (${c.error}). Triage said: ${r.reason}`);
+  } else if ("gist" in c) {
+    // The plain card: five short parts you read top to bottom, the technical rest folded away.
+    body = [
+      part("In plain words", c.gist),
+      part("Picture it", c.picture),
+      part("Why it matters to you", c.why_you),
+      c.remember ? h("p", { class: "remember" }, h("span", { class: "sr-only" }, "Remember: "), c.remember) : null,
+      deeper(
+        row("The word", c.term ? h("span", { class: "term" }, c.term + ". ") : null, c.term_meaning),
+        row("Say it", c.say_it ? `“${c.say_it}”` : null,
+            c.follow_up_why ? h("span", { class: "asked" }, "They ask “why?” ", c.follow_up_why) : null),
+        row("How sure", c.reality_check),
+        row("Try it", c.try_it)),
+    ];
+  } else {  // cards written before the plain-words redesign
+    body = h("dl", { class: "card" },
+      row("The word", c.term ? h("span", { class: "term" }, c.term + ". ") : null, c.term_meaning),
+      row("Why it matters", c.why_it_matters),
+      row("Example", c.example),
+      row("Say it", c.say_it ? `“${c.say_it}”` : null,
+          c.follow_up_why ? h("span", { class: "asked" }, "They ask “why?” ", c.follow_up_why) : null),
+      row("Reality check", c.reality_check),
+      row("Try it", c.try_it));
+  }
   return h("article", { class: "learn-item", id: "item-" + r.id },
     h("div", { class: "num", "aria-hidden": "true" }, n),
     h("div", {},
       h("h3", {}, h("span", { class: "hl" }, c.headline || r.headline || r.title)),
       meta(r),
       alsoLine(r),
-      r.hits.length ? h("ul", { class: "passed", "aria-label": "Why this made the cut" }, r.hits.map((x) => h("li", {}, HIT_WORDS[x] || x))) : null,
-      c.error
-        ? h("p", { class: "card-error" }, `Couldn't explain this one (${c.error}). Triage said: ${r.reason}`)
-        : h("dl", { class: "card" },
-            row("The word", c.term ? h("span", { class: "term" }, c.term + ". ") : null, c.term_meaning),
-            row("Why it matters", c.why_it_matters),
-            row("Example", c.example),
-            row("Say it", c.say_it ? `“${c.say_it}”` : null,
-                c.follow_up_why ? h("span", { class: "asked" }, "They ask “why?” ", c.follow_up_why) : null),
-            row("Reality check", c.reality_check),
-            row("Try it", c.try_it)),
+      body,
       h("p", { class: "original" }, h("a", { href: r.url }, "Read the original"))));
 }
 
 function knowSection(rows) {
   return h("section", { class: "bucket", id: "sec-know" },
-    h("h2", {}, h("span", { class: "ul" }, "Know")),
-    h("p", { class: "about" }, "Big enough that you should have heard of it. Nothing to do."),
+    h("details", { class: "ledger" },
+      h("summary", {}, `${plural(rows.length, "other thing")} worth knowing about, one line each`),
     h("ul", { class: "know-list" }, rows.map((r) => h("li", { id: "item-" + r.id },
       h("div", { class: "head" }, h("a", { href: r.url, class: "ul" }, r.headline || r.title)),
       r.reason ? h("p", { class: "reason" }, r.reason) : null,
-      meta(r, r.demoted ? h("span", { class: "budget-note" }, "worth learning, but didn't fit your budget") : null),
-      alsoLine(r)))));
+      meta(r, r.demoted ? h("span", { class: "budget-note" }, "worth learning, but there were five bigger ones") : null),
+      alsoLine(r))))));
 }
 
 function skipSection(rows) {
@@ -591,6 +622,7 @@ const STAGE_TEXT = {
   triage: (n) => `Sorting ${plural(n, "item")} against your three questions`,
   read: (n) => `Reading ${plural(n, "full article")}`,
   explain: (n) => `Explaining ${n} in plain English`,
+  check: (n) => `Checking ${plural(n, "card")} against their sources`,
 };
 
 function setBusy(busy) {

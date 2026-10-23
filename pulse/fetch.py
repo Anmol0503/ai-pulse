@@ -98,31 +98,38 @@ def is_http(url: str) -> bool:
 class _TextExtractor(HTMLParser):
     SKIP = {"script", "style", "noscript", "svg", "nav", "header", "footer", "aside", "form", "button", "iframe", "template"}
     BLOCK = {"p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "pre", "blockquote", "section", "article", "figcaption"}
+    PROSE = {"p", "li", "h1", "h2", "h3", "h4", "pre", "blockquote", "figcaption", "td"}
 
-    def __init__(self) -> None:
+    def __init__(self, prose_only: bool = False) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.skip_depth = 0
+        self.prose_only = prose_only
+        self.prose_depth = 0
 
     def handle_starttag(self, tag, attrs):
         if tag in self.SKIP:
             self.skip_depth += 1
         elif tag in self.BLOCK:
             self.parts.append("\n")
+        if tag in self.PROSE:
+            self.prose_depth += 1
 
     def handle_endtag(self, tag):
         if tag in self.SKIP:
             self.skip_depth = max(0, self.skip_depth - 1)
         elif tag in self.BLOCK:
             self.parts.append("\n")
+        if tag in self.PROSE:
+            self.prose_depth = max(0, self.prose_depth - 1)
 
     def handle_data(self, data):
-        if not self.skip_depth:
+        if not self.skip_depth and (not self.prose_only or self.prose_depth):
             self.parts.append(data)
 
 
-def _extract(fragment: str) -> str:
-    parser = _TextExtractor()
+def _extract(fragment: str, prose_only: bool = False) -> str:
+    parser = _TextExtractor(prose_only)
     parser.feed(fragment)
     parser.close()
     lines = (re.sub(r"[ \t\r\f\v]+", " ", ln).strip() for ln in "".join(parser.parts).split("\n"))
@@ -132,12 +139,17 @@ def _extract(fragment: str) -> str:
 def html_to_text(raw: str, limit: int = 12_000) -> str:
     """Readable text from an HTML page or fragment.
 
-    Prefers the <article> or <main> element when it holds real text — that is
-    where the post lives; menus, footers and cookie banners live outside it.
+    First choice: only the text inside paragraphs, list items and headings. Posts are
+    written in those; menus, widgets and "related models" cards mostly aren't. (Trusting
+    <article> read a Hugging Face post's sidebar of model ads instead of the post.)
+    If that finds little, fall back to the <article> or <main> element, then the page.
     Uses find(), not a regex across the document, so a huge page stays linear.
     """
     if not raw:
         return ""
+    prose = _extract(raw, prose_only=True)
+    if len(prose) >= 600:
+        return prose[:limit]
     low = raw.lower()
     for tag in ("article", "main"):
         start, end = low.find(f"<{tag}"), low.rfind(f"</{tag}>")
@@ -564,8 +576,9 @@ def _model_size(m: dict) -> str:
     if not params:
         return "size not listed"
     b = params / 1e9
-    # ~0.6 bytes per parameter at 4-bit (Q4_K_M), the usual way to run a model on a Mac
-    return f"{b:.1f}B parameters, about {b * 0.6:.0f} GB of memory at 4-bit"
+    gb = b * 0.6  # ~0.6 bytes per parameter at 4-bit (Q4_K_M), the usual way to run a model on a Mac
+    return f"{b:.1f}B parameters, about {gb:.1f} GB of memory at 4-bit" if gb < 10 else \
+        f"{b:.1f}B parameters, about {gb:.0f} GB of memory at 4-bit"
 
 
 async def fetch_hf_models(client: httpx.AsyncClient, src: Source, since: datetime) -> list[Item]:
@@ -787,12 +800,19 @@ _ARXIV = re.compile(r"arxiv\.org/(?:abs|pdf|html)/(\d{4}\.\d{4,5})")
 
 
 async def _readable(client: httpx.AsyncClient, url: str, limit: int) -> str:
+    readme = None
     if m := _GITHUB_REPO.match(url):
-        body, _ = await get(client, f"https://raw.githubusercontent.com/{m[1]}/{m[2]}/HEAD/README.md", 400_000)
-        return body.decode("utf-8", errors="replace")[:limit]
-    if m := _HF_MODEL.match(url):
-        body, _ = await get(client, f"https://huggingface.co/{m[1]}/raw/main/README.md", 400_000)
-        return body.decode("utf-8", errors="replace")[:limit]
+        readme = f"https://raw.githubusercontent.com/{m[1]}/{m[2]}/HEAD/README.md"
+    elif m := _HF_MODEL.match(url):
+        readme = f"https://huggingface.co/{m[1]}/raw/main/README.md"
+    if readme:
+        try:
+            body, _ = await get(client, readme, 400_000)
+            text = body.decode("utf-8", errors="replace")[:limit]
+            if len(text.strip()) >= 200:
+                return text
+        except httpx.HTTPError:
+            pass  # gated (Google's models need a login) or no README.md: read the page itself instead
     if m := _ARXIV.search(url):
         body, _ = await get(client, f"https://arxiv.org/abs/{m[1]}", 600_000)
         return clean(head_meta(body.decode("utf-8", errors="replace")).meta.get("citation_abstract", ""))[:limit]

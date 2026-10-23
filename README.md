@@ -4,8 +4,10 @@ Press one button. Get what's new in AI from 32 sources, sorted into three piles,
 with the few that matter to you explained in plain English. Then the page ends:
 **"You're caught up."**
 
-- **Learn** (at most 5): full explanation — the word, why it matters, one example,
-  how you'd say it in an interview, a reality check, and a 15-minute thing to try.
+- **Learn** (at most 5): a short card in plain words. What happened, the idea, a
+  picture from your own work (SQL, ETL, sklearn), why it matters to you, and one line
+  to remember. The term, an interview line, how sure it is and a 15-minute thing to
+  try sit behind "Go deeper".
 - **Know**: one line each. Big enough that you should have heard of it.
 - **Skipped**: everything else, each with the reason it was safe to skip.
   (This is the Ignore Ledger from `06-staying-current.md`, written for you.)
@@ -26,7 +28,7 @@ Choose who explains with the menu next to the button:
 
 | Engine | How it runs | Trade-off |
 |---|---|---|
-| **Claude (your plan)** | `claude -p`, Claude Code's headless mode, with every tool off | Best explanations. Uses your plan's usage; no API key, no bill. |
+| **Claude (your plan)** | `claude -p`, Claude Code's headless mode, with every tool off. Haiku sorts, Opus writes the cards | Best explanations. Uses your plan's usage; no API key, no bill. |
 | **Local (free, less accurate)** | `qwen2.5:7b-instruct` through Ollama on your Mac | Free, private, offline. Weaker at judging what matters, and it invents details: on its first test card it claimed the Claude API is free. The page labels its cards. |
 
 ## On your phone
@@ -70,7 +72,7 @@ triage   Haiku sorts every item: learn / know / skip, score 1-10            ~40 
 merge    one call folds "same story, different source" into one item        ~6 s
 budget   YOUR rule in pulse/budget.py picks at most 5 to explain           instant
 read     fetch the full article for those 5                                 ~2 s
-explain  Sonnet writes the plain-English cards                              ~20 s
+explain  Opus writes the plain cards                                       ~60 s
 ```
 
 Measured on 2026-10-08: a 7-day first pull took **73 s** and would have cost
@@ -83,21 +85,24 @@ items, so it uses a stronger one. One strong model reading everything in full
 would cost several times more for the same five cards. This **router → worker**
 shape is how you keep an LLM pipeline's cost proportional to what matters.
 
-## Your part: `pulse/budget.py`
+## How the 5 are picked: `pulse/budget.py`
 
-Triage can mark a dozen items "learn". You get five. `pick_learn()` decides which
-five and in what order. Right now it's a placeholder that cuts by source order, so a
-9/10 item can lose to a 4/10 one. Write the real rule (5–10 lines), then check it.
-The app reloads `budget.py` on every pull, so there's no restart: save, then press Pull.
+Triage can mark a dozen items "learn". You get five, most important first: ranked by
+triage's 1–10 score, then by how many of your three questions the item passed, then by
+how new it is. No source gets more than 2 of the 5 unless there's nothing else, so a
+week of changelog lines can't push out the week's big story. An item with too little
+real text to explain (a talk with only a title) gets no card; the next one steps in.
+
+It's a short function and it's yours: change the rule, save, press Pull (it reloads on
+every pull), and check the basics still hold:
 
 ```bash
-uv run pytest tests/test_budget.py -v     # 2 tests stay red until you do
+uv run pytest tests/test_budget.py -v
 ```
 
-You can rank on `v.score` (1–10 from triage), `v.hits` (which of your questions it
-passed), `v.signal` (HN points, HF upvotes), `v.published` and `v.source`.
-Careful with `signal`: 300 Hacker News points and 300 Hugging Face upvotes are not
-the same amount of excitement.
+You can rank on `v.score`, `v.hits`, `v.signal` (HN points, HF upvotes), `v.published`
+and `v.source`. Careful with `signal`: 300 Hacker News points and 300 Hugging Face
+upvotes are not the same amount of excitement.
 
 ## Make it yours
 
@@ -109,6 +114,17 @@ the same amount of excitement.
   per pull. Reloaded on every pull, like `budget.py`.
 
 ## Decisions that came from measuring, not guessing
+
+- **The cards are written for a newcomer, and tested on one.** The first version was
+  ~250 words in 8 parts, with up to 11 unexplained AI words per card. Now it's ~95
+  words in 5 parts, with the rest behind "Go deeper". On 8 real items, two blind
+  newcomer readers (a data scientist new to AI; a second-language reader) preferred
+  Opus's cards 7 times out of 8 and understood them better (4.5 vs 3.5 out of 5), and
+  Opus used 0.4 unexplained AI words per card to Sonnet's 1.4. Pictures from your own
+  work (a cached warehouse query, an sklearn cutoff) were the ones they remembered.
+- **No source, no card.** When a source was thin, both models filled the gaps with
+  confident guesses. A fact checker caught it, so thin items no longer get explained,
+  and the writer must keep the source's strength of claim ("can help" stays "can help").
 
 - **Triage runs at low effort.** On one batch of 30, Haiku 5.5 took 29 s at low effort
   and 52 s at medium, and picked the same three "learn" items both times.
@@ -138,7 +154,7 @@ pulse/fetch.py     7 source kinds -> Items             pulse/budget.py    YOUR r
 pulse/pipeline.py  one pull, start to finish           pulse/store.py     SQLite: pulls + every item shown
 pulse/server.py    FastAPI + live progress (SSE)       pulse/static/      the page
 pulse/publish.py   one pull -> static site (the cloud)  deploy.sh          site -> gh-pages, seen-list -> pulse-data
-profile.md         who it's for (example: profile.example.md)  tests/     47 tests: uv run pytest (2 stay red until you write budget.py)
+profile.md         who it's for (example: profile.example.md)  tests/     54 tests: uv run pytest
 ```
 
 ## When something goes wrong

@@ -54,6 +54,7 @@ def _merge(keep: Item, other: Item) -> None:
 
 
 SETTLE = timedelta(days=2)  # how long a story gets to collect its points before it's judged on them
+MIN_TEXT = 600  # characters of real text needed to explain an item without guessing
 
 
 def select_new(items: list[Item], store: Store, since: datetime, sources: list[Source]) -> tuple[list[Item], list[Item]]:
@@ -103,6 +104,28 @@ def _display_order(verdicts: list[Verdict], keep: list[Verdict]) -> list[Verdict
     )
     skip = sorted((v for v in verdicts if v.bucket == "skip"), key=lambda v: (v.source, v.item.title))
     return keep + know + skip
+
+
+async def readable_picks(client, ranked: list[Verdict], want: int) -> tuple[list[tuple[Verdict, str]], list[Verdict]]:
+    """Read full text best-first and keep the first `want` items that say enough to explain.
+
+    A talk with only a title, or a page we couldn't read, gets no card: given nothing, the
+    explainer fills the gap with confident guesses, and a guess dressed as a fact is the worst
+    thing a card can teach you. The next item in line takes its place.
+    """
+    chosen: list[tuple[Verdict, str]] = []
+    thin: list[Verdict] = []
+    i = 0
+    while len(chosen) < want and i < len(ranked):
+        batch = ranked[i : i + (want - len(chosen)) + 2]  # a little extra, in case some are thin
+        i += len(batch)
+        texts = await asyncio.gather(*(full_text(client, v.item) for v in batch))
+        for v, text in zip(batch, texts):
+            if len(" ".join(text.split())) < MIN_TEXT:
+                thin.append(v)
+            elif len(chosen) < want:
+                chosen.append((v, text))
+    return chosen, thin
 
 
 def reload_user_code(emit) -> None:
@@ -181,20 +204,32 @@ async def run_pull(store: Store, engine, emit, sources: list[Source] | None = No
                     stats["budget_error"] = f"{type(exc).__name__}: {exc}"
                     emit({"type": "warning", "message": f"budget.py raised {stats['budget_error']}, so the first {limit} were kept."})
                 learn_ids = {v.item.id for v in learn}
-                keep, kept_ids = [], set()
-                for v in chosen:  # keep your order; ignore duplicates and anything triage didn't pick
-                    if v.item.id in learn_ids and v.item.id not in kept_ids:
-                        keep.append(v)
-                        kept_ids.add(v.item.id)
+                order, seen_ids = [], set()
+                for v in chosen:  # your order first; ignore duplicates and anything triage didn't pick
+                    if v.item.id in learn_ids and v.item.id not in seen_ids:
+                        order.append(v)
+                        seen_ids.add(v.item.id)
+                want = len(order)
+                order += [v for v in learn if v.item.id not in seen_ids]  # next in line, if one is too thin
+
+                picks, thin = [], []
+                if want:
+                    emit({"type": "stage", "stage": "read", "total": want})
+                    picks, thin = await readable_picks(client, order, want)
+                keep = [v for v, _ in picks]
+                kept_ids = {v.item.id for v in keep}
                 for v in learn:
                     if v.item.id not in kept_ids:
                         v.bucket, v.demoted = "know", True
+                for v in thin:
+                    v.reason = f"{v.reason} (Too little detail published yet to explain it.)".strip()
+                stats["too_thin"] = len(thin)
 
-                if keep:
-                    emit({"type": "stage", "stage": "read", "total": len(keep)})
-                    texts = await asyncio.gather(*(full_text(client, v.item) for v in keep))
-                    emit({"type": "stage", "stage": "explain", "total": len(keep)})
-                    await brain.explain(engine, list(zip(keep, texts)), usage, progress("explain"))
+                if picks:
+                    emit({"type": "stage", "stage": "explain", "total": len(picks)})
+                    await brain.explain(engine, picks, usage, progress("explain"))
+                    emit({"type": "stage", "stage": "check", "total": len(picks)})
+                    stats["fixed"] = await brain.check_and_fix(engine, picks, usage)
 
         ordered = _display_order(verdicts, keep)
         counts = {b: sum(v.bucket == b for v in ordered) for b in ("learn", "know", "skip")}

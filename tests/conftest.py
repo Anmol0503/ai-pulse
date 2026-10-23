@@ -36,6 +36,10 @@ class FakeEngine:
         usage.record("fake-model", 100, 20, 0.01, 0.001)
         if role == self.fail_on:
             raise EngineError(f"fake {role} failure")
+        if "checks" in schema["properties"]:  # the fact-check pass: flag titles that say "wrong"
+            checked = re.findall(r'<item id="([^"]+)">\ncard: (.*?)\nsource text:', prompt)
+            return {"checks": [{"id": iid, "problems": ["the picture is wrong"] if "wrong" in card else []}
+                               for iid, card in checked]}
         if "groups" in schema["properties"]:  # the same-story merge pass
             ids = dict(re.findall(r'<item id="([^"]+)">[^:]*: Plain: ([^<]*)</item>', prompt))
             by_title = {title: iid for iid, title in ids.items()}
