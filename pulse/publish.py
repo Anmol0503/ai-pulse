@@ -32,6 +32,7 @@ from .store import Store
 HERE = Path(__file__).resolve().parent
 KEEP_PULLS = 30
 SCHEDULE = "every morning at 7:30 (India time)"
+SCHEDULE_UTC = (2, 0)  # the workflow's cron, "0 2 * * *": the page turns it into the reader's own local time
 
 
 # ---------------------------------------------------------------- the site
@@ -56,10 +57,15 @@ def export_site(store: Store, out: Path, repo: str, keep: int = KEEP_PULLS) -> N
     }
     (out / "state.json").write_text(json.dumps(state))
 
+    # Only the daily cloud job may promise a next pull or offer "Pull now": a copy published
+    # from your Mac has no schedule behind it, and its Pull link would lead to a 404.
+    in_cloud = bool(os.environ.get("GITHUB_ACTIONS"))
     config = {
         "repo": repo,
-        "run_url": f"https://github.com/{repo}/actions/workflows/pulse.yml" if repo else "",
-        "schedule": SCHEDULE,
+        "run_url": f"https://github.com/{repo}/actions/workflows/pulse.yml" if repo and in_cloud else "",
+        "schedule": SCHEDULE if in_cloud else "",
+        "utc_hour": SCHEDULE_UTC[0],
+        "utc_minute": SCHEDULE_UTC[1],
     }
     page = (HERE / "static" / "index.html").read_text()
     for placeholder, value in (
@@ -81,8 +87,8 @@ PUBLISHED_HEAD = """<link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-180.png">
 <meta name="apple-mobile-web-app-title" content="AI Pulse">
-<meta name="theme-color" content="#F3F5F8" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#131B2C" media="(prefers-color-scheme: dark)">"""
+<meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131A27" media="(prefers-color-scheme: dark)">"""
 
 MANIFEST = {
     "name": "AI Pulse",
@@ -90,8 +96,8 @@ MANIFEST = {
     "description": "What's new in AI, sorted into learn / know / skip.",
     "start_url": "./",
     "display": "standalone",
-    "background_color": "#131B2C",
-    "theme_color": "#131B2C",
+    "background_color": "#131A27",
+    "theme_color": "#131A27",
     "icons": [
         {"src": "icon-180.png", "sizes": "180x180", "type": "image/png"},
         {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"},
@@ -103,19 +109,15 @@ MANIFEST = {
 
 
 def icon(size: int) -> bytes:
-    """The page's strip as an icon: tall yellow (learn), mid blue (know), short grey (skip)."""
-    ink, colours = (19, 27, 44), {"learn": (235, 203, 69), "know": (141, 176, 227), "skip": (74, 86, 112)}
-    plan = ["learn"] * 3 + ["know"] * 4 + ["skip"] * 6
-    heights = {"learn": 0.52, "know": 0.32, "skip": 0.13}
-    left, right, base = 0.17, 0.83, 0.78
-    slot = (right - left) / len(plan)
-    bars = [(left + i * slot, left + i * slot + slot * 0.72, base - heights[kind], colours[kind])
-            for i, kind in enumerate(plan)]
+    """The page as an icon: four lines of a letter, the last in rubric red (the one to remember)."""
+    ink, paper, rubric = (19, 26, 39), (230, 233, 240), (240, 142, 160)
+    lines = [(0.24, 0.80, 0.30, paper), (0.24, 0.72, 0.42, paper), (0.24, 0.76, 0.54, paper), (0.24, 0.58, 0.68, rubric)]
+    thick = 0.06
 
     def pixel(x: int, y: int) -> tuple[int, int, int]:
         u, v = (x + 0.5) / size, (y + 0.5) / size
-        for x0, x1, top, colour in bars:
-            if x0 <= u < x1 and top <= v < base:
+        for x0, x1, top, colour in lines:
+            if x0 <= u < x1 and top <= v < top + thick:
                 return colour
         return ink
 

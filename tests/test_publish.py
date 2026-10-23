@@ -26,7 +26,8 @@ def one_pull(store, fake_source):
     return asyncio.run(run_pull(store, FakeEngine(), lambda e: None, [fake_source.source]))
 
 
-def test_the_site_has_every_file_the_page_reads(store, fake_source, tmp_path):
+def test_the_site_has_every_file_the_page_reads(store, fake_source, tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")  # published by the daily cloud job
     pull_id = one_pull(store, fake_source)
     publish.export_site(store, tmp_path, "someone/ai-pulse")
 
@@ -84,3 +85,11 @@ def test_rebuild_only(store, fake_source, tmp_path, monkeypatch):
     one_pull(Store(db), fake_source)
     assert publish.main(["--out", str(tmp_path / "site"), "--no-pull", "--repo", "a/b"]) == 0
     assert len(json.loads((tmp_path / "site" / "state.json").read_text())["pulls"]) == 1
+
+
+def test_a_copy_published_from_a_mac_promises_no_schedule_and_no_pull_link(store, fake_source, tmp_path, monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    one_pull(store, fake_source)
+    publish.export_site(store, tmp_path, "someone/ai-pulse")
+    page = (tmp_path / "index.html").read_text()
+    assert '"run_url": ""' in page and '"schedule": ""' in page
