@@ -422,3 +422,58 @@ def test_openrouter_keeps_a_model_that_only_exists_as_a_free_route():
 
     items = run(go())
     assert len(items) == 1 and "free in / free out" in items[0].title
+
+
+# Trimmed from the real page, icons kept: they broke the first version of the parser.
+GH_ROW = """<article class="Box-row">
+  <div class="float-right"><a href="/login?return_to=%2F{repo}"><svg class="octicon octicon-star"><path d="M8 .25a.75.75 0 0 1"></path></svg><span>Star</span></a></div>
+  <h2 class="h3 lh-condensed"><a href="/{repo}" class="Link"><svg></svg>
+      <span class="text-normal">{owner} /</span> {name}</a></h2>
+  <p class="col-9 color-fg-muted my-1">
+      {desc}
+  </p>
+  <div class="f6 color-fg-muted mt-2">
+    <span itemprop="programmingLanguage">Python</span>
+    <a href="/{repo}/stargazers" class="Link"><svg class="octicon octicon-star"><path d="M8 .25a.75.75 0 0 1"></path></svg>
+        {stars}</a>
+    <a href="/{repo}/forks" class="Link">
+        1,204</a>
+    <span class="d-inline-block float-sm-right">
+        {gained} stars today
+    </span>
+  </div>
+</article>"""
+
+
+def test_gh_trending_reads_repos_with_stars_gained_and_the_viral_share():
+    def row(repo, desc, stars, gained):
+        owner, name = repo.split("/")
+        return GH_ROW.format(repo=repo, owner=owner, name=name, desc=desc, stars=stars, gained=gained)
+
+    page = "<html><body>" + row("someone/agent-kit", "Agents &amp; skills for Claude Code", "10,000", "9,500") \
+        + row("fastapi/fastapi", "FastAPI framework", "95,000", "190") + "</body></html>"
+    src = Source("GitHub Trending (today)", "gh_trending", "https://github.com/trending?since=daily", "why")
+
+    async def go():
+        async with client_for({"https://github.com/trending": (200, "text/html", page)}) as c:
+            return await fetch.fetch_gh_trending(c, src, utcnow() - timedelta(days=7))
+
+    viral, old = run(go())
+    assert viral.url == "https://github.com/someone/agent-kit"
+    assert viral.title == "someone/agent-kit: Agents & skills for Claude Code"
+    assert (viral.signal, viral.signal_label) == (9_500, "stars today")
+    assert "95% of all its stars" in viral.summary and "Language: Python." in viral.summary
+    assert "95,000 stars, 1,204 forks." in old.summary
+    assert "0% of all its stars" in old.summary and old.published is None
+    assert viral.id == item_id("https://github.com/someone/agent-kit")  # merges with HN etc. linking the same repo
+
+
+def test_gh_trending_says_so_when_the_page_layout_changes():
+    src = Source("GitHub Trending (today)", "gh_trending", "https://github.com/trending?since=daily", "why")
+
+    async def go():
+        async with client_for({"https://github.com/trending": (200, "text/html", "<html>redesigned</html>")}) as c:
+            return await fetch.fetch_all(c, [src], utcnow() - timedelta(days=7))
+
+    items, errors = run(go())
+    assert items == [] and "layout" in errors[src.name]

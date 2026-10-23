@@ -1,6 +1,6 @@
 """Fetch every source at once and turn whatever it returns into Items.
 
-Seven kinds of source, one function each:
+Eight kinds of source, one function each:
   feed          RSS / Atom: blogs, YouTube channels, GitHub releases, Reddit
   hn            Hacker News, through Algolia's public search API
   hf_papers     Hugging Face Daily Papers (JSON, with upvotes)
@@ -8,6 +8,7 @@ Seven kinds of source, one function each:
   md_changelog  API changelogs published as Markdown (Claude, OpenAI, Gemini)
   hf_models     newly released open-weight models trending on Hugging Face, with sizes
   openrouter    every model newly listed on OpenRouter, with prices and context windows
+  gh_trending   github.com/trending: the repos on every "#1 on GitHub" reel, with stars gained
 
 A source that fails never sinks the pull: fetch_all() reports the error and carries on.
 """
@@ -641,7 +642,65 @@ async def fetch_openrouter(client: httpx.AsyncClient, src: Source, since: dateti
     return items
 
 
+# ---------------------------------------------------------------- GitHub Trending
+
+# github.com/trending has no API, so we read the page. Each repo is one <article class="Box-row">.
+_GH_ROW = re.compile(r'<article class="Box-row">(.*?)</article>', re.S)
+_GH_NAME = re.compile(r'<h2[^>]*>.*?href="/([\w.-]+/[\w.-]+)"', re.S)
+_GH_DESC = re.compile(r"<p\b[^>]*>(.*?)</p>", re.S)  # \b: not the <path> inside an icon
+_GH_ICON = re.compile(r"<svg\b.*?</svg>", re.S)  # icons sit between a link and its number: drop them first
+_GH_LANG = re.compile(r'itemprop="programmingLanguage">([^<]+)<')
+_GH_COUNT = re.compile(r'href="/[\w.-]+/[\w.-]+/(stargazers|forks)"[^>]*>\s*([\d,]+)\s*<', re.S)
+_GH_GAINED = re.compile(r"([\d,]+)\s+stars?\s+(today|this week|this month)")
+
+
+def _num(text: str) -> int:
+    return int(text.replace(",", ""))
+
+
+async def fetch_gh_trending(client: httpx.AsyncClient, src: Source, since: datetime) -> list[Item]:
+    body, _ = await get(client, src.url, src.max_bytes)
+    page = body.decode("utf-8", "replace")
+    rows = _GH_ROW.findall(page)
+    if not rows:
+        raise ValueError("no repos found: GitHub may have changed the trending page's layout")
+    items = []
+    for row in rows:
+        row = _GH_ICON.sub("", row)
+        name = _GH_NAME.search(row)
+        if not name:
+            continue
+        repo = name.group(1)
+        url = f"https://github.com/{repo}"
+        desc = clean(html.unescape(re.sub(r"<[^>]+>", "", m.group(1)))) if (m := _GH_DESC.search(row)) else ""
+        lang = clean(m.group(1)) if (m := _GH_LANG.search(row)) else ""
+        counts = {kind: _num(n) for kind, n in _GH_COUNT.findall(row)}
+        gained = _GH_GAINED.search(row)
+        new_stars, period = (_num(gained.group(1)), gained.group(2)) if gained else (None, "")
+        total = counts.get("stargazers", 0)
+        # The hype check: a repo with 95% of its stars from today went viral; one with 2% is an old
+        # favourite having a good day. Triage sees the share and can tell the two apart.
+        share = f" ({new_stars / total:.0%} of all its stars)" if new_stars and total else ""
+        facts = [desc if not desc or desc[-1] in ".!?)" else f"{desc}.", f"Language: {lang}." if lang else "",
+                 f"{total:,} stars, {counts.get('forks', 0):,} forks.",
+                 f"Gained {new_stars:,} stars {period}{share}." if new_stars else ""]
+        items.append(
+            Item(
+                id=item_id(url),  # same id as any other source linking the repo, so they merge
+                source=src.name,
+                title=f"{repo}: {desc}" if desc else repo,
+                url=url,
+                published=None,  # a ranking, not a stream: the seen-list stops repeats, not a date
+                summary=" ".join(f for f in facts if f),
+                signal=new_stars,
+                signal_label=f"stars {period}" if period else "",
+            )
+        )
+    return items
+
+
 FETCHERS = {
+    "gh_trending": fetch_gh_trending,
     "feed": fetch_feed,
     "hn": fetch_hn,
     "hf_papers": fetch_hf_papers,

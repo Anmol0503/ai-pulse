@@ -17,7 +17,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Source:
     name: str
-    kind: str  # "feed" | "hn" | "hf_papers" | "sitemap" | "md_changelog" | "hf_models" | "openrouter"
+    kind: str  # "feed" | "hn" | "hf_papers" | "sitemap" | "md_changelog" | "hf_models" | "openrouter" | "gh_trending"
     url: str  # the machine-readable endpoint
     why: str  # one line: what this catches that the others don't
     group: str = "Other"  # heading on the page's source list
@@ -145,9 +145,12 @@ SOURCES: list[Source] = [
     Source("Hacker News", "hn", "https://hn.algolia.com/api/v1/search",
            "AI stories engineers upvoted past 50 points, plus any story past 300 (product names like 'Pi 1.0' hide AI).",
            COMMUNITY, cap=25, min_points=50, any_topic_points=300),
-    Source("GitHub Trending (weekly)", "feed", "https://mshibanami.github.io/GitHubTrendingRSS/weekly/all.xml",
-           "The repos builders starred this week; most are AI or agent tools now. A third-party feed (GitHub has no API for this).",
-           COMMUNITY, cap=6, ranked=True),
+    Source("GitHub Trending (today)", "gh_trending", "https://github.com/trending?since=daily",
+           "The repos 'ranked #1 on GitHub' in reels, read from GitHub itself, with stars gained today so you can tell viral from established.",
+           COMMUNITY, cap=5, max_bytes=2_000_000),
+    Source("GitHub Trending (this week)", "gh_trending", "https://github.com/trending?since=weekly",
+           "Catches the ones that peaked on a day you didn't pull. A repo in both lists shows up once.",
+           COMMUNITY, cap=4, max_bytes=2_000_000),
     Source("Ars Technica AI", "feed", "https://arstechnica.com/ai/feed/",
            "Careful reporting for the headline layer: policy, lawsuits and launches, with less hype than most.",
            COMMUNITY, cap=4),
@@ -162,5 +165,7 @@ SOURCES: list[Source] = [
 #   AINews on news.smol.ai: moved to Latent Space. Karpathy's YouTube: silent since Feb 2025.
 #   TechCrunch (~110/week, mostly funding), The Verge, Techmeme, Ben's Bites, Import AI, hnrss.org: overlap or noise.
 #   r/LocalLLaMA JSON endpoint: HTTP 403 (the RSS works).
+#   GitHubTrendingRSS (mshibanami.github.io): replaced 2026-10-24. No star counts, so triage couldn't tell a viral
+#       repo from an old one, and it ran about a day behind github.com/trending.
 #   India-specific, if you want them: ETtech AI https://economictimes.indiatimes.com/tech/artificial-intelligence/rssfeeds/119215726.cms
 #       and MediaNama https://www.medianama.com/tag/artificial-intelligence/feed/ (both ~45 posts a week).
