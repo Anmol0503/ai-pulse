@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import time
 
 import pytest
 
@@ -35,8 +37,11 @@ def test_the_site_has_every_file_the_page_reads(store, fake_source, tmp_path, mo
     assert [p["id"] for p in state["pulls"]] == [pull_id] and state["running"] is False
     assert state["engines"]["claude"]["ok"] is True and len(state["sources"]) > 0
 
+    assert state["pulls"][0]["headlines"] == ["headline of learn about evals"]  # what the list of days shows
+
     digest = json.loads((tmp_path / "pulls" / f"{pull_id}.json").read_text())
     assert [r["title"] for r in digest["learn"]] == ["learn about evals"]
+    assert set(digest) == {"pull", "learn"} and "stats" not in digest["pull"]  # only what the page shows
 
     page = (tmp_path / "index.html").read_text()
     assert '"run_url": "https://github.com/someone/ai-pulse/actions/workflows/pulse.yml"' in page
@@ -89,7 +94,42 @@ def test_rebuild_only(store, fake_source, tmp_path, monkeypatch):
 
 def test_a_copy_published_from_a_mac_promises_no_schedule_and_no_pull_link(store, fake_source, tmp_path, monkeypatch):
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("PULSE_SCHEDULE", raising=False)
     one_pull(store, fake_source)
     publish.export_site(store, tmp_path, "someone/ai-pulse")
     page = (tmp_path / "index.html").read_text()
     assert '"run_url": ""' in page and '"schedule": ""' in page
+
+
+@pytest.fixture
+def india_clock():
+    """The Mac's clock set to India time."""
+    old = os.environ.get("TZ")
+    os.environ["TZ"] = "Asia/Kolkata"
+    time.tzset()
+    yield
+    if old is None:
+        os.environ.pop("TZ", None)
+    else:
+        os.environ["TZ"] = old
+    time.tzset()
+
+
+def test_the_morning_job_on_a_mac_promises_its_next_pull(store, fake_source, tmp_path, monkeypatch, india_clock):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setenv("PULSE_SCHEDULE", "mac")
+    one_pull(store, fake_source)
+    publish.export_site(store, tmp_path, "someone/ai-pulse")
+    page = (tmp_path / "index.html").read_text()
+    assert '"schedule": "mac"' in page and '"next_utc": [2, 0]' in page  # 7:30 in India is 02:00 UTC
+    assert '"run_url": ""' in page  # no GitHub job to open from a Mac-published copy
+
+
+def test_every_day_stays_listed_newest_first(store, fake_source, tmp_path):
+    one_pull(store, fake_source)
+    fake_source.items = [make_item("learn about agents")]
+    asyncio.run(run_pull(store, FakeEngine(), lambda e: None, [fake_source.source]))
+    publish.export_site(store, tmp_path, "someone/ai-pulse")
+    pulls = json.loads((tmp_path / "state.json").read_text())["pulls"]
+    assert [p["headlines"] for p in pulls] == [["headline of learn about agents"], ["headline of learn about evals"]]
+    assert all((tmp_path / "pulls" / f"{p['id']}.json").exists() for p in pulls)

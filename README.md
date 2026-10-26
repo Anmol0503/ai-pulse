@@ -1,16 +1,17 @@
 # AI Pulse
 
-Press one button. Get what's new in AI from 32 sources, sorted into three piles,
-with the few that matter to you explained in plain English. Then the page ends:
-**"You're caught up."**
+What's new in AI from 32 sources, cut down to the few that matter to you (at most 5),
+each explained in plain words. Then the page ends: **"You're caught up."**
 
-- **Learn** (at most 5): a short card in plain words. What happened, the idea, a
-  picture from your own work (SQL, ETL, sklearn), why it matters to you, and one line
-  to remember. The term, an interview line, how sure it is and a 15-minute thing to
-  try sit behind "Go deeper".
-- **Know**: one line each. Big enough that you should have heard of it.
-- **Skipped**: everything else, each with the reason it was safe to skip.
-  (This is the Ignore Ledger from `06-staying-current.md`, written for you.)
+Each card says what happened, gives a picture from your own work (SQL, ETL, sklearn),
+says why it matters to you, and ends on one line to remember. The term, an interview
+line, how sure it is and a 15-minute thing to try sit behind **Go deeper**.
+
+Every day stays. **All days** lists them newest first, with each day's headlines, and
+each day ends with links to the one before and after it.
+
+Everything else is still sorted (Know, or Skip with the reason) and stored, so nothing
+is shown twice. The page just doesn't show it.
 
 ## Run it
 
@@ -36,12 +37,34 @@ Choose who explains with the menu next to the button:
 **https://anmol0503.github.io/ai-pulse/**. Bookmark it, or Share, then Add to Home Screen
 for an app icon.
 
-A GitHub Action (`.github/workflows/pulse.yml`) pulls every morning at 7:30 (India time)
-and publishes the result there. For a pull right now, tap **Pull now** on the page: it
-opens the workflow on GitHub. Tap **Run workflow**, then reload the page in about three
-minutes.
+**Every morning, from your Mac.** A launchd job runs `./daily.sh` at 7:30: one pull, then
+it publishes the result there. If the Mac is asleep at 7:30, the job runs as soon as the Mac
+wakes. Runs at 10:00, 13:00, 16:00, 19:00 and 22:00 catch a day the Mac was off or a pull
+failed, and do nothing once the day's pull is done. A day the Mac stays shut is folded into
+the next day's digest, so no news is lost.
 
-It runs on your Claude plan through a token, and reads your profile from a secret:
+```bash
+./schedule-mac.sh          # turn it on (run it again after moving this folder)
+./schedule-mac.sh --now    # run it right now (still once a day)
+./schedule-mac.sh --off    # turn it off
+./daily.sh --rebuild       # republish without pulling, after changing the page
+tail -f data/daily.log     # what it did, and why it stopped if it did
+```
+
+It uses the `claude` and `gh` logins already on this Mac, so there's no token to set up.
+The phone's days live in `data/cloud.db`. The app on your Mac (`uv run pulse`) keeps its own,
+in `data/pulse.db`.
+
+**What's public:** the site and this code. Anyone with the link can read the digests,
+including lines like "your 24 GB Mac". **What isn't:** `profile.md` (git ignores it).
+
+**How it remembers what you've seen:** after each pull, `deploy.sh` force-pushes the site
+to the `gh-pages` branch and `data/cloud.db` to the `pulse-data` branch, one commit each, so
+no history piles up there.
+
+**Or from GitHub's cloud**, so it runs with the Mac off: the workflow waits on the
+`schedule` branch. Pushing it needs `gh auth refresh -h github.com -s workflow`, and it runs
+on your Claude plan through a token and reads your profile from a secret:
 
 ```bash
 claude setup-token                                              # opens the browser, prints a token
@@ -49,17 +72,8 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN -R Anmol0503/ai-pulse     # paste it when 
 gh secret set PULSE_PROFILE -R Anmol0503/ai-pulse < profile.md  # again whenever you edit profile.md
 ```
 
-**What's public:** the site and this code. Anyone with the link can read the digests,
-including lines like "your 24 GB Mac". **What isn't:** `profile.md` (git ignores it; the
-cloud reads the `PULSE_PROFILE` secret) and your token.
-
-**How the cloud remembers what you've seen:** after each run, `deploy.sh` force-pushes the
-site to the `gh-pages` branch and the seen-list to the `pulse-data` branch, one commit each,
-so no history piles up. Your Mac and the cloud keep separate seen-lists.
-
-**If it stops:** GitHub emails you when a run fails, and the page says why. The usual cause
-is an expired token: run the first two commands again. If GitHub ever pauses the schedule
-(it does that to quiet repos after 60 days), turn it back on from the Actions tab.
+Then turn the Mac job off (`./schedule-mac.sh --off`), or both will pull. The page then
+offers **Pull now**, which opens the workflow on GitHub.
 
 ## What one pull does
 
@@ -153,8 +167,9 @@ pulse/sources.py   where it looks, and why            pulse/brain.py     prompts
 pulse/fetch.py     7 source kinds -> Items             pulse/budget.py    YOUR rule
 pulse/pipeline.py  one pull, start to finish           pulse/store.py     SQLite: pulls + every item shown
 pulse/server.py    FastAPI + live progress (SSE)       pulse/static/      the page
-pulse/publish.py   one pull -> static site (the cloud)  deploy.sh          site -> gh-pages, seen-list -> pulse-data
-profile.md         who it's for (example: profile.example.md)  tests/     54 tests: uv run pytest
+pulse/publish.py   one pull -> static site            deploy.sh          site -> gh-pages, seen-list -> pulse-data
+daily.sh           the morning job: pull, then deploy  schedule-mac.sh    turn the morning job on or off
+profile.md         who it's for (example: profile.example.md)  tests/     58 tests: uv run pytest
 ```
 
 ## When something goes wrong

@@ -6,7 +6,7 @@
 The site is the same page as the local app, reading files instead of a live server:
   site/index.html        the page, told it's a published copy (Pull opens GitHub instead)
   site/state.json        sources and the list of pulls
-  site/pulls/<id>.json   each pull's digest, newest 30
+  site/pulls/<id>.json   each pull's cards, every day you've had
   site/manifest.webmanifest + icons, so "Add to Home Screen" gives it a proper icon
 
 It never writes profile.md into the site: in the cloud, your profile comes from the
@@ -22,6 +22,7 @@ import os
 import struct
 import sys
 import zlib
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import brain
@@ -30,23 +31,41 @@ from .pipeline import run_pull
 from .store import Store
 
 HERE = Path(__file__).resolve().parent
-KEEP_PULLS = 30
-SCHEDULE = "every morning at 7:30 (India time)"
-SCHEDULE_UTC = (2, 0)  # the workflow's cron, "0 2 * * *": the page turns it into the reader's own local time
+SCHEDULE_UTC = (2, 0)  # the cloud workflow's cron, "0 2 * * *" (7:30 in India)
+MAC_MORNING = (7, 30)  # the morning job on your Mac, in the Mac's own clock (schedule-mac.sh says the same)
+
+
+def schedule() -> tuple[str, tuple[int, int] | None]:
+    """Which daily job published this copy, and its time in UTC (the page shows it in the reader's clock).
+
+    Only a real schedule earns a "Next pull" line: the cloud job (GITHUB_ACTIONS), or the morning
+    job on your Mac (daily.sh sets PULSE_SCHEDULE=mac while schedule-mac.sh has it turned on).
+    """
+    if os.environ.get("GITHUB_ACTIONS"):
+        return "cloud", SCHEDULE_UTC
+    if os.environ.get("PULSE_SCHEDULE") == "mac":
+        morning = datetime.now().astimezone().replace(hour=MAC_MORNING[0], minute=MAC_MORNING[1], second=0, microsecond=0)
+        utc = morning.astimezone(timezone.utc)
+        return "mac", (utc.hour, utc.minute)
+    return "", None
 
 
 # ---------------------------------------------------------------- the site
 
 
-def export_site(store: Store, out: Path, repo: str, keep: int = KEEP_PULLS) -> None:
+def export_site(store: Store, out: Path, repo: str) -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / "pulls").mkdir(exist_ok=True)
     for old in (out / "pulls").glob("*.json"):  # a rebuilt site holds exactly the pulls it lists
         old.unlink()
 
-    pulls = [p for p in store.pulls(limit=keep) if p["status"] != "running"]
+    pulls = [p for p in store.pulls() if p["status"] != "running"]
     for p in pulls:
-        (out / "pulls" / f"{p['id']}.json").write_text(json.dumps(store.digest(p["id"])))
+        d = store.digest(p["id"])
+        # The page shows only the cards. Leaving out the Know and Skip lists and the token stats
+        # makes each day's file a fraction of the size, so years of days stay light on a phone.
+        pull = {k: d["pull"][k] for k in ("id", "started_at", "finished_at", "engine", "status", "error")}
+        (out / "pulls" / f"{p['id']}.json").write_text(json.dumps({"pull": pull, "learn": d["learn"]}))
 
     claude = brain.ClaudeCLI
     state = {
@@ -57,15 +76,13 @@ def export_site(store: Store, out: Path, repo: str, keep: int = KEEP_PULLS) -> N
     }
     (out / "state.json").write_text(json.dumps(state))
 
-    # Only the daily cloud job may promise a next pull or offer "Pull now": a copy published
-    # from your Mac has no schedule behind it, and its Pull link would lead to a 404.
-    in_cloud = bool(os.environ.get("GITHUB_ACTIONS"))
+    kind, utc = schedule()
     config = {
         "repo": repo,
-        "run_url": f"https://github.com/{repo}/actions/workflows/pulse.yml" if repo and in_cloud else "",
-        "schedule": SCHEDULE if in_cloud else "",
-        "utc_hour": SCHEDULE_UTC[0],
-        "utc_minute": SCHEDULE_UTC[1],
+        # "Pull now" opens the cloud workflow: a copy published from your Mac has none, and the link would 404
+        "run_url": f"https://github.com/{repo}/actions/workflows/pulse.yml" if repo and kind == "cloud" else "",
+        "schedule": kind,
+        "next_utc": list(utc) if utc else None,
     }
     page = (HERE / "static" / "index.html").read_text()
     for placeholder, value in (

@@ -166,7 +166,8 @@ class Store:
             out.update(self.db.execute(f"SELECT id, source FROM passed_over WHERE id IN ({marks})", chunk).fetchall())
         return out
 
-    def pulls(self, limit: int = 60) -> list[dict]:
+    def pulls(self, limit: int | None = None) -> list[dict]:
+        """Every pull, newest first, each with its Learn headlines in reading order: the list of days."""
         rows = self.db.execute(
             """
             SELECT p.id, p.started_at, p.finished_at, p.engine, p.status, p.error,
@@ -176,9 +177,13 @@ class Store:
             FROM pulls p LEFT JOIN items i ON i.pull_id = p.id
             GROUP BY p.id ORDER BY p.id DESC LIMIT ?
             """,
-            (limit,),
+            (-1 if limit is None else limit,),  # SQLite: LIMIT -1 means no limit
         ).fetchall()
-        return [dict(r) for r in rows]
+        headlines: dict[int, list[str]] = {}
+        for r in self.db.execute("SELECT pull_id, card, headline, title FROM items WHERE bucket = 'learn' ORDER BY pull_id, rank"):
+            card = json.loads(r["card"]) if r["card"] else {}
+            headlines.setdefault(r["pull_id"], []).append(card.get("headline") or r["headline"] or r["title"])
+        return [{**dict(r), "headlines": headlines.get(r["id"], [])} for r in rows]
 
     def digest(self, pull_id: int) -> dict | None:
         pull = self.db.execute("SELECT * FROM pulls WHERE id=?", (pull_id,)).fetchone()

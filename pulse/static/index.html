@@ -81,7 +81,7 @@ a:hover { text-decoration-thickness: 2px; text-decoration-color: currentColor; }
 
 /* letterhead */
 .letterhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
-.brand { margin: 0; font: 700 1.1875rem/1.3 var(--serif); }
+.brand { display: inline-block; padding-block: 0.625rem; font: 700 1.1875rem/1.3 var(--serif); color: var(--ink); text-decoration: none; }
 .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
 .pull { display: inline-block; padding-block: 0.625rem; font-size: 1.0625rem; }
 .pull-btn {
@@ -99,6 +99,7 @@ select {
   letter-spacing: -0.012em; text-wrap: balance;
 }
 .dateline[hidden] + .title { margin-top: 2.25rem; }  /* no date above it (a pull in progress): keep the breathing room */
+.title:focus { outline: none; }  /* focused only by the page itself, when a new view opens */
 .lede { margin: 1rem 0 0; color: var(--label); text-wrap: pretty; }
 .note { margin: 1rem 0 0; font-size: 1.0625rem; color: var(--rubric); }
 
@@ -165,8 +166,29 @@ main { margin-top: 2.75rem; }
 .recap li { counter-increment: keep; display: grid; grid-template-columns: 1.5rem 1fr; gap: 0.25rem; font: italic 500 1.1875rem/1.35 var(--serif); }
 .recap li::before { content: counter(keep); font-style: normal; color: var(--pencil); }
 .end-next { margin: 0.5rem 0 0; font-size: 1.0625rem; color: var(--pencil); }
-.end-more { margin: 1.5rem 0 0; font-size: 1rem; color: var(--pencil); }
-.end-more label { display: inline-flex; align-items: center; gap: 0.6rem; }
+.end-nav { display: flex; flex-direction: column; align-items: center; gap: 0.125rem; margin-top: 1.75rem; }
+.step { display: inline-flex; align-items: baseline; gap: 0.5rem; min-height: 44px; padding-block: 0.5rem; text-decoration: none; }
+.step-label { font-size: 1rem; color: var(--pencil); }
+.step-date {
+  font: 600 1.1875rem/1.3 var(--serif);
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.22em; text-decoration-color: var(--pencil);
+}
+.step:hover .step-date { text-decoration-thickness: 2px; text-decoration-color: currentColor; }
+.all-days {
+  display: inline-flex; align-items: center; min-height: 44px; margin-top: 0.75rem; padding: 0 1.1rem;
+  border: 1.5px solid var(--control); border-radius: 999px; text-decoration: none; font-size: 1.0625rem; font-weight: 500;
+}
+
+/* every day so far: one row per day, the whole row is the link */
+.days { list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--rule); }
+.day { position: relative; padding: 1.5rem 0; border-top: 1px solid var(--rule); }
+.day-title { margin: 0; font: 600 1.5rem/1.2 var(--serif); }
+.day-title a { text-decoration: none; }
+.day-title a::after { content: ""; position: absolute; inset: 0; }
+.day:hover .day-title a { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.22em; }
+.day-meta { margin: 0.25rem 0 0; font-size: 1.0625rem; color: var(--pencil); }
+.day-heads { list-style: none; margin: 0.875rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem;
+             font-size: 1.0625rem; line-height: 1.4; color: var(--label); }
 
 @media (min-width: 48rem) {
   .page { padding-top: 3rem; }
@@ -183,15 +205,16 @@ main { margin-top: 2.75rem; }
 <div class="page">
   <header>
     <div class="letterhead">
-      <p class="brand">AI Pulse</p>
+      <a class="brand" href="#">AI Pulse</a>
       <div class="controls">
+        <a id="days-link" class="pull" href="#days" hidden>All days</a>
         <select id="engine" aria-label="Who writes the cards" hidden></select>
         <button id="pull" class="pull-btn" type="button" hidden>Pull latest</button>
         <a id="pull-link" class="pull" target="_blank" rel="noopener noreferrer" hidden>Pull now on GitHub<span class="vh"> (opens in a new tab)</span></a>
       </div>
     </div>
     <p class="dateline" id="dateline" hidden></p>
-    <h1 class="title" id="title">AI Pulse</h1>
+    <h1 class="title" id="title" tabindex="-1">AI Pulse</h1>
     <p class="lede" id="lede" hidden></p>
     <p class="note" id="note" hidden></p>
   </header>
@@ -206,14 +229,15 @@ main { margin-top: 2.75rem; }
   <main>
     <noscript><p class="lede">Turn on JavaScript to read today’s cards.</p></noscript>
     <ol class="cards" id="cards" aria-labelledby="title"></ol>
+    <ol class="days" id="days" aria-labelledby="title" hidden></ol>
   </main>
 
   <footer class="end" id="end" hidden>
     <div class="sunrise" aria-hidden="true"></div>
-    <h2 class="end-title">You’re caught up.</h2>
+    <h2 class="end-title" id="end-title">You’re caught up.</h2>
     <ol class="recap" id="recap" aria-label="The lines to remember"></ol>
     <p class="end-next" id="next" hidden></p>
-    <p class="end-more" id="history-wrap" hidden><label>Earlier digests <select id="history"></select></label></p>
+    <nav class="end-nav" id="end-nav" aria-label="Other days"></nav>
   </footer>
 </div>
 <p class="vh" id="announce" aria-live="polite"></p>
@@ -231,7 +255,10 @@ function h(tag, attrs = {}, ...kids) {
   for (const [k, v] of Object.entries(attrs)) {
     if (v === null || v === undefined || v === false) continue;
     if (k === "class") el.className = v;
-    else if (k === "href") { if (/^https?:\/\//i.test(v)) { el.href = v; el.target = "_blank"; el.rel = "noopener noreferrer"; } }
+    else if (k === "href") {
+      if (/^#[\w-]*$/.test(v)) el.setAttribute("href", v);  // another view of this page
+      else if (/^https?:\/\//i.test(v)) { el.href = v; el.target = "_blank"; el.rel = "noopener noreferrer"; }
+    }
     else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
     else el.setAttribute(k, v === true ? "" : v);
   }
@@ -277,11 +304,14 @@ const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frida
 
 const plural = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 const dayLabel = (d) => `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+const clock = (d) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
 
 function countTitle(n) {
   if (n === 0) return "Nothing new that matters";
   return n === 1 ? "One thing that matters" : `${COUNT_WORDS[n] || n} things that matter`;
 }
+
+const countDays = (n) => (n === 1 ? "One day so far" : `${COUNT_WORDS[n] || n} days so far`);
 
 function ago(iso) {
   if (!iso) return null;
@@ -306,25 +336,67 @@ function smart(text) {
 
 function host(url) { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; } }
 
+// The daily pull, in the reader's own clock: "tomorrow at 7:30 am".
+function nextPull() {
+  const now = new Date();
+  const [hour, minute] = STATIC.next_utc || [2, 0];
+  const at = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, minute));
+  while (at <= now) at.setUTCDate(at.getUTCDate() + 1);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const day = at.toDateString() === now.toDateString() ? "today"
+            : at.toDateString() === tomorrow.toDateString() ? "tomorrow" : dayLabel(at);
+  return `${day} at ${clock(at)}`;
+}
+
 /* ---------- state ---------- */
 
 let STATE = null;   // /api/state
 let stream = null;  // EventSource while a pull runs (on your Mac)
 let clockTimer = null;
 
+const days = () => STATE.pulls.filter((p) => p.status === "done");  // newest first
+
+// "Saturday 24 October", with the time added on a day that holds two pulls.
+function dayNames() {
+  const list = days(), perDate = {};
+  for (const p of list) { const k = new Date(p.started_at).toDateString(); perDate[k] = (perDate[k] || 0) + 1; }
+  return new Map(list.map((p) => {
+    const d = new Date(p.started_at);
+    return [p.id, perDate[d.toDateString()] > 1 ? `${dayLabel(d)}, ${clock(d)}` : dayLabel(d)];
+  }));
+}
+
 async function boot() {
   STATE = await api("/api/state");
   renderControls();
-  renderHistory();
   if (STATE.running) return follow();
-  const latest = STATE.pulls.find((p) => p.status === "done");
-  if (latest) await showPull(latest.id);
-  else showEmpty();
+  await route();
 }
 
 async function refreshState() {
   STATE = await api("/api/state");
-  renderHistory();
+}
+
+/* ---------- which view: the part of the address after # ----------
+     (nothing)   the latest day
+     #days       every day so far
+     #pull-12    one day's cards
+   Links change it, so the browser's back button walks back through the days you opened. */
+
+async function route() {
+  const list = days();
+  $("#days-link").hidden = list.length < 2 || location.hash === "#days";
+  if (location.hash === "#days") return showDays();
+  const m = location.hash.match(/^#pull-(\d+)$/);
+  if (m && STATE.pulls.some((p) => p.id === Number(m[1]))) return showPull(Number(m[1]));
+  if (list.length) return showPull(list[0].id);
+  showEmpty();
+}
+
+function goLatest() {
+  if (location.hash) history.pushState(null, "", location.pathname + location.search);
+  return route();
 }
 
 /* ---------- header ---------- */
@@ -351,9 +423,9 @@ function renderControls() {
   if (!chosen) showNote("No model is available, so Pull is off. " + Object.values(STATE.engines).map((e) => e.detail).join(" "));
 }
 
-function setHeader({ date = null, title, lede = null }) {
-  $("#dateline").hidden = !date;
-  $("#dateline").textContent = date ? dayLabel(new Date(date)) : "";
+function setHeader({ day = null, title, lede = null }) {
+  $("#dateline").hidden = !day;
+  $("#dateline").textContent = day || "";
   $("#title").textContent = title;
   $("#lede").hidden = !lede;
   $("#lede").textContent = lede || "";
@@ -364,16 +436,10 @@ function showNote(text) {
   $("#note").textContent = text || "";
 }
 
-function renderHistory() {
-  const sel = $("#history");
-  const current = sel.value;
-  const done = STATE.pulls.filter((p) => p.status === "done");
-  sel.replaceChildren(...done.map((p) => {
-    const d = new Date(p.started_at);
-    return h("option", { value: p.id }, `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}, ${plural(p.learn, "card")}`);
-  }));
-  $("#history-wrap").hidden = done.length < 2;
-  if (current) sel.value = current;
+function showOnly(view) {  // "cards" or "days"
+  $("#cards").hidden = view !== "cards";
+  $("#days").hidden = view !== "days";
+  if (view !== "cards") $("#cards").replaceChildren();
 }
 
 /* ---------- reading progress ---------- */
@@ -403,16 +469,35 @@ window.addEventListener("scroll", () => {
   requestAnimationFrame(() => { ticking = false; updateProgress(); });
 }, { passive: true });
 
-/* ---------- one digest ---------- */
+/* ---------- every day so far ---------- */
+
+function showDays() {
+  const list = days(), names = dayNames();
+  setHeader({ title: countDays(list.length) });
+  showNote(null);
+  showOnly("days");
+  $("#days").replaceChildren(...list.map((p) => {
+    const heads = p.headlines || [];
+    return h("li", { class: "day" },
+      h("h2", { class: "day-title" }, h("a", { href: `#pull-${p.id}` }, names.get(p.id))),
+      h("p", { class: "day-meta" }, heads.length ? plural(heads.length, "thing") : "Nothing new that mattered"),
+      heads.length ? h("ul", { class: "day-heads" }, heads.map((t) => h("li", {}, smart(t)))) : null);
+  }));
+  $("#end").hidden = true;
+  setProgress(0);
+  window.scrollTo({ top: 0 });
+}
+
+/* ---------- one day ---------- */
 
 function showEmpty() {
   setHeader({
     title: "Nothing pulled yet",
     lede: STATIC
-      ? (STATIC.schedule ? `The first pull runs ${STATIC.schedule}.` : "No digest has been published here yet.")
+      ? (STATIC.schedule ? `The first digest arrives ${nextPull()}.` : "No digest has been published here yet.")
       : "Press Pull latest to fetch the last 7 days. Only the few that matter to you get a card.",
   });
-  $("#cards").replaceChildren();
+  showOnly("cards");
   $("#end").hidden = true;
   setProgress(0);
 }
@@ -420,26 +505,27 @@ function showEmpty() {
 async function showPull(id) {
   const d = await api(`/api/pulls/${id}`);
   const p = d.pull;
-  $("#history").value = String(p.id);
-  $("#working").hidden = true;
+  const day = dayNames().get(p.id) || dayLabel(new Date(p.started_at));
+  showOnly("cards");
 
   if (p.status !== "done") {
-    setHeader({ date: p.started_at, title: "This pull didn’t finish",
+    setHeader({ day, title: "This pull didn’t finish",
                 lede: p.error ? `${p.error} Nothing from it was marked as read, so the next pull picks it up again.` : null });
     $("#cards").replaceChildren();
     $("#end").hidden = true;
     setProgress(0);
+    window.scrollTo({ top: 0 });
     return;
   }
 
   const cards = d.learn;
-  setHeader({ date: p.started_at, title: countTitle(cards.length),
+  setHeader({ day, title: countTitle(cards.length),
               lede: cards.length ? null : "Nothing new passed your three questions. That’s a good day to build something." });
   showNote(p.engine === "ollama" && cards.length
     ? "Written by a small model on your Mac: it gets the gist and can invent details, so check facts in the original."
     : null);
   $("#cards").replaceChildren(...cards.map((r, i) => cardItem(r, i + 1, cards.length)));
-  renderEnd(cards);
+  renderEnd(p, cards, day);
   setProgress(cards.length);
   window.scrollTo({ top: 0 });
 }
@@ -488,23 +574,30 @@ function deeper(c) {
   return h("details", { class: "deeper" }, h("summary", {}, "Go deeper"), h("dl", { class: "deeper-list" }, rows));
 }
 
-function renderEnd(cards) {
+// The close of a day: what to remember, then the way to the day before or after.
+function renderEnd(p, cards, day) {
+  const list = days(), names = dayNames();
+  const at = list.findIndex((q) => q.id === p.id);
+  const latest = at === 0;
+  $("#end-title").textContent = latest ? "You’re caught up." : `That was ${day}.`;
+
   const lines = cards.map((r) => r.card?.remember).filter(Boolean);
   $("#recap").replaceChildren(...lines.map((line) => h("li", {}, smart(line))));
   $("#recap").hidden = lines.length < 2;
-  const next = $("#next");
-  next.hidden = !(STATIC && STATIC.schedule);
-  next.textContent = next.hidden ? "" : `Next pull: ${nextPull()}`;
-  $("#end").hidden = false;
-}
 
-// The daily cloud pull, in the reader's own time: "tomorrow at 7:30 am", "today at 7:30 am".
-function nextPull() {
-  const now = new Date();
-  const at = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), STATIC.utc_hour ?? 2, STATIC.utc_minute ?? 0));
-  if (at <= now) at.setUTCDate(at.getUTCDate() + 1);
-  const day = at.toDateString() === now.toDateString() ? "today" : "tomorrow";
-  return `${day} at ${at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase()}`;
+  const next = $("#next");
+  next.hidden = !(latest && STATIC?.schedule);
+  next.textContent = next.hidden ? "" : `Next pull: ${nextPull()}${STATIC.schedule === "mac" ? ", once your Mac is awake" : ""}`;
+
+  const step = (label, q) => h("a", { class: "step", href: q === list[0] ? "#" : `#pull-${q.id}` },
+    h("span", { class: "step-label" }, label), h("span", { class: "step-date" }, names.get(q.id)));
+  const older = at >= 0 ? list[at + 1] : null, newer = at > 0 ? list[at - 1] : null;
+  $("#end-nav").replaceChildren(...[  // replaceChildren would print a null as the word "null"
+    older ? step("Earlier", older) : null,
+    newer ? step("Later", newer) : null,
+    list.length > 1 ? h("a", { class: "all-days", href: "#days" }, "All days") : null,
+  ].filter(Boolean));
+  $("#end").hidden = false;
 }
 
 /* ---------- a pull in progress (on your Mac) ---------- */
@@ -544,7 +637,7 @@ function follow() {
   setBusy(true);
   setHeader({ title: "Pulling the latest…" });
   showNote(null);
-  $("#cards").replaceChildren();
+  showOnly("cards");
   $("#end").hidden = true;
   $("#warnings").replaceChildren();
   $("#working").hidden = false;
@@ -579,8 +672,9 @@ function follow() {
         finished = true;
         stream.close();
         setBusy(false);
+        $("#working").hidden = true;
         await refreshState();
-        await showPull(ev.pull_id);
+        await goLatest();
         $("#announce").textContent = `Pull finished: ${plural(ev.learn, "card")}.`;
         break;
       case "error":
@@ -602,7 +696,7 @@ function follow() {
     setBusy(false);
     $("#working").hidden = true;
     await refreshState();
-    if (pullId != null) await showPull(pullId); else await boot();
+    if (pullId != null) location.hash = `#pull-${pullId}`; else await boot();
   });
   stream.onerror = () => {
     if (finished) return;
@@ -613,6 +707,18 @@ function follow() {
 }
 
 /* ---------- wiring ---------- */
+
+function showError(err) {
+  setHeader({ title: "Couldn’t reach AI Pulse", lede: STATIC ? `${err.message}. Try reloading.` : `${err.message}. Start it with: uv run pulse` });
+}
+
+try { history.scrollRestoration = "manual"; } catch { /* old browser: fine */ }
+
+window.addEventListener("hashchange", () => {
+  if (!STATE) return;
+  // A new view: move focus to its title, so a screen reader starts reading there.
+  route().then(() => $("#title").focus({ preventScroll: true })).catch(showError);
+});
 
 $("#engine").addEventListener("change", (e) => saved.set("engine", e.target.value));
 
@@ -631,11 +737,7 @@ $("#pull").addEventListener("click", async () => {
   follow();
 });
 
-$("#history").addEventListener("change", (e) => showPull(Number(e.target.value)));
-
-boot().catch((err) => {
-  setHeader({ title: "Couldn’t reach AI Pulse", lede: STATIC ? `${err.message}. Try reloading.` : `${err.message}. Start it with: uv run pulse` });
-});
+boot().catch(showError);
 </script>
 </body>
 </html>
