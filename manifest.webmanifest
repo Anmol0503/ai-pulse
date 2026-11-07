@@ -1,0 +1,21 @@
+{
+ "name": "AI Pulse",
+ "short_name": "AI Pulse",
+ "description": "What's new in AI, sorted into learn / know / skip.",
+ "start_url": "./",
+ "display": "standalone",
+ "background_color": "#131A27",
+ "theme_color": "#131A27",
+ "icons": [
+  {
+   "src": "icon-180.png",
+   "sizes": "180x180",
+   "type": "image/png"
+  },
+  {
+   "src": "icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png"
+  }
+ ]
+}
