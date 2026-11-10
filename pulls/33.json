@@ -1,0 +1,1 @@
+{"pull": {"id": 33, "started_at": "2026-11-05T04:30:05+00:00", "finished_at": "2026-11-05T04:30:14+00:00", "engine": "claude", "status": "failed", "error": "Claude said: Failed to authenticate: OAuth session expired and could not be refreshed"}, "learn": []}
